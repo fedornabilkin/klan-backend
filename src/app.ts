@@ -1,0 +1,258 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import express, { type ErrorRequestHandler, type Request } from 'express';
+import compression from 'compression';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import { z } from 'zod';
+import type { Activity, Entity, Resource, User } from './shared/contracts.js';
+import type { Config } from './config.js';
+import type { DatabaseState, Repository } from './repository.js';
+import { profileEntryText } from './shared/profile-entries.js';
+import { userPath } from './shared/user-links.js';
+import { createAuth } from './auth.js';
+import { createBotIngress } from './bot-ingress.js';
+import { createCatalogRouter, findOrCreateCatalogEntry } from './catalog.js';
+import { createAnalyticsRouter } from './analytics.js';
+import { createLocationCatalogRouter } from './location-catalog.js';
+import { createAndAssignProfileTag } from './profile-tags.js';
+import { hasCapability, requireCapability } from './access.js';
+import { HttpError, notFound, forbidden } from './errors.js';
+import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, setResult, updateProfile, visibleState } from './domain.js';
+
+export type Broadcast = (message: { type: 'invalidate'; resource: string } | { type: 'activity'; data: Activity }) => void;
+export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined) {
+  const app = express();
+  app.disable('x-powered-by');
+  if (config.production) app.set('trust proxy', 1);
+  app.use(helmet({ contentSecurityPolicy: config.production ? {
+    directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'https:'], connectSrc: ["'self'", 'wss:'], fontSrc: ["'self'", 'data:'], objectSrc: ["'none'"], frameAncestors: ["'none'"] },
+  } : false, crossOriginEmbedderPolicy: false }));
+  app.use(compression());
+  app.use(express.json({ limit: '256kb' }));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api', (req, _res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    const origin = req.headers.origin;
+    // Browser writes require a matching Origin. JSON-only prevents form-based CSRF.
+    if (origin !== config.origin) return next(new HttpError(403, 'INVALID_ORIGIN', 'Запрос отправлен с недоверенного сайта'));
+    if (req.headers['sec-fetch-site'] === 'cross-site') return next(forbidden());
+    if (!req.is('application/json') && req.method !== 'DELETE') return next(new HttpError(415, 'JSON_REQUIRED', 'Ожидается JSON'));
+    next();
+  });
+  app.get('/api/health', async (_req, res) => {
+    try { await repo.ping?.(); res.json({ data: { status: 'ok', demo: config.demo } }); }
+    catch { res.status(503).json({ data: { status: 'unavailable', demo: config.demo } }); }
+  });
+  const notify = (resource: string, activity?: Activity) => {
+    broadcast({ type: 'invalidate', resource });
+    broadcast({ type: 'invalidate', resource: 'dashboard' });
+    broadcast({ type: 'invalidate', resource: 'stats' });
+    if (activity) broadcast({ type: 'activity', data: activity });
+  };
+  const auth = createAuth(repo, config, async (actor, action) => {
+    const activity = await repo.write(state => addActivity(state, actor, action));
+    notify('users', activity);
+  });
+  // A service endpoint, outside browser cookie authentication and Origin handling.
+  app.use('/internal/telegram', createBotIngress(config.botInternalSecret, auth.handleTelegramUpdate));
+  app.use(['/api/auth/demo', '/api/auth/telegram/start'], rateLimit({ windowMs: 5 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много попыток входа. Попробуйте позже.' } } }));
+  app.use('/api/auth', rateLimit({ windowMs: 5 * 60 * 1000, limit: 400, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте позже.' } } }), auth.router);
+  app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте через минуту.' } } }));
+  app.use('/api', auth.requireAuth);
+  app.use('/api/location-catalog', createLocationCatalogRouter());
+  app.use('/api/admin/catalogs', createCatalogRouter(repo, notify));
+  app.use('/api/admin/analytics', createAnalyticsRouter(repo));
+  const query = (req: Request) => querySchema.parse(req.query);
+  const resource = (req: Request) => {
+    const value = String(req.params.resource);
+    if (!resources.includes(value as Resource)) throw notFound();
+    return value as Resource;
+  };
+  const mutate = async <T>(actor: User, collection: string, action: string, fn: (state: DatabaseState) => T, target?: (value: T) => Activity['target']) => {
+    const outcome = await repo.write(state => {
+      const data = fn(state); const destination = target?.(data);
+      const draft = !!destination && state.entities.some(entity => entity.status === 'draft' && destination.path === `/${entity.type}/${entity.id}`);
+      return { data, activity: addActivity(state, actor, action, destination), draft };
+    });
+    // Draft activities remain available to administrators via the feed; never broadcast their titles to members.
+    notify(collection, outcome.draft ? undefined : outcome.activity);
+    return { data: outcome.data };
+  };
+  const entityTarget = (entity: Entity) => ({ title: entity.title, path: `/${entity.type}/${entity.id}` });
+
+  app.get('/api/tags', async (_req, res) => res.json({ data: await repo.read(state => state.tags.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))) }));
+  app.get('/api/items', async (_req, res) => res.json({ data: await repo.read(state => state.items.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))) }));
+  for (const collection of ['tags', 'items'] as const) {
+    app.post(`/api/${collection}`, async (req, res) => {
+      const result = await mutate(req.user!, collection, collection === 'tags' ? 'добавил тег' : 'добавил предмет', state => findOrCreateCatalogEntry(state, collection, req.body));
+      res.status(201).json(result);
+    });
+  }
+  app.post('/api/users/:id/tags', async (req, res) => {
+    const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
+    const result = await mutate(req.user!, 'users', 'добавил тег в профиль', state => createAndAssignProfileTag(state, id, req.body, req.user!), user => ({ title: user.name, path: userPath(user) }));
+    broadcast({ type: 'invalidate', resource: 'tags' });
+    res.json(result);
+  });
+  app.get('/api/users/me/export', async (req, res) => {
+    const profile = await repo.read(state => {
+      const { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags } = hydrateUser(state, getUser(state, req.user!.id));
+      return { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags };
+    });
+    res.json({ data: { version: 1, profile } });
+  });
+  app.post('/api/users/me/import', async (req, res) => {
+    const { profile } = z.object({ profile: profileSchema }).strict().parse(req.body);
+    res.json(await mutate(req.user!, 'users', 'импортировал профиль', state => {
+      if (profile.tags) profile.tags = profile.tags.map(tag => {
+        return findOrCreateCatalogEntry(state, 'tags', { name: tag.name });
+      });
+      return updateProfile(state, req.user!.id, profile, req.user!);
+    }, user => ({ title: user.name, path: userPath(user) })));
+  });
+  app.get('/api/activity', async (req, res) => {
+    const params = query(req);
+    res.json(await repo.read(state => paginate(visibleState(state, req.user!).activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)), params)));
+  });
+  app.get('/api/geography', async (req, res) => {
+    const params = query(req);
+    res.json({ data: await repo.read(state => {
+      const cities = new Map<string, { id: string; city: string; country: string; lat: number; lng: number; count: number; users: Pick<User, 'id' | 'publicId' | 'name' | 'initials' | 'color'>[] }>();
+      for (const user of filtered(state.users, params)) {
+        const { lat, lng } = user.location;
+        const city = user.location.city.trim(), country = user.location.country.trim();
+        if (!city || typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90
+          || typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180) continue;
+        const key = `${country}:${city}`.toLocaleLowerCase('ru');
+        const point = cities.get(key) ?? { id: key, city, country, lat, lng, count: 0, users: [] };
+        point.count++;
+        if (point.users.length < 5) point.users.push({ id: user.id, publicId: user.publicId, name: user.name, initials: user.initials, color: user.color });
+        cities.set(key, point);
+      }
+      return [...cities.values()];
+    }) });
+  });
+  app.get('/api/dashboard', async (req, res) => {
+    res.json({ data: await repo.read(raw => {
+      const state = visibleState(raw, req.user!);
+      const now = new Date();
+      const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+      const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+      const inMonth = (entity: Entity) => entity.schedule && Date.parse(entity.schedule.start) < end && Date.parse(entity.schedule.end) >= start;
+      const events = state.entities.filter(entity => entity.type === 'events' && inMonth(entity) && !['draft', 'archived'].includes(entity.status)).sort((a, b) => a.schedule!.start.localeCompare(b.schedule!.start));
+      const challenges = state.entities.filter(entity => entity.type === 'challenges' && inMonth(entity) && entity.status === 'active');
+      const teams = state.entities.filter(entity => entity.type === 'teams' && entity.status === 'active');
+      const mapUsers = state.users.filter(({ location }) => location.city.trim()
+        && typeof location.lat === 'number' && Number.isFinite(location.lat) && location.lat >= -90 && location.lat <= 90
+        && typeof location.lng === 'number' && Number.isFinite(location.lng) && location.lng >= -180 && location.lng <= 180);
+      return { stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, events: events.length, challenges: challenges.length, teams: teams.length },
+        events: events.filter(event => Date.parse(event.schedule!.end) >= now.getTime()).slice(0, 4).map(e => hydrateEntity(state, e)), challenges: challenges.slice(0, 3).map(e => hydrateEntity(state, e)), teams: teams.slice(0, 4).map(e => hydrateEntity(state, e)), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20) };
+    }) });
+  });
+  app.get('/api/stats', async (req, res) => {
+    res.json({ data: await repo.read(raw => {
+      const state = visibleState(raw, req.user!);
+      const counts = (values: string[]) => [...values.reduce((map, name) => map.set(name, (map.get(name) ?? 0) + 1), new Map<string, number>())].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+      return { users: state.users.length, cities: counts(state.users.map(u => u.location.city.trim()).filter(Boolean)), interests: counts(state.users.flatMap(u => u.tags.map(t => t.name))),
+        teams: state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, title: e.title, count: e.participants.length })), achievements: counts(state.users.flatMap(u => u.achievements.map(profileEntryText))),
+        activity: counts(state.activities.map(a => a.createdAt.slice(0, 10))).map(({ name, count }) => ({ date: name, count })).sort((a, b) => a.date.localeCompare(b.date)), };
+    }) });
+  });
+  app.post('/api/:resource/:id/join', async (req, res) => {
+    const collection = resource(req);
+    res.json(await mutate(req.user!, collection, collection === 'teams' ? 'присоединился к команде' : collection === 'challenges' ? 'принял участие в челлендже' : 'записался на мероприятие', state => joinEntity(state, collection, String(req.params.id), req.user!, req.body), entityTarget));
+    notify('users');
+  });
+  app.delete('/api/:resource/:id/join', async (req, res) => {
+    const collection = resource(req);
+    res.json(await mutate(req.user!, collection, 'отменил участие', state => leaveEntity(state, collection, String(req.params.id), req.user!), entityTarget));
+    notify('users');
+  });
+  app.put('/api/events/:id/items', async (req, res) => {
+    const { items } = z.object({ items: z.array(z.object({ id: z.string().min(1), name: z.string().trim().min(1).max(80), quantity: z.number().int().positive().max(999).default(1) }).strict()).max(50) }).strict().parse(req.body);
+    res.json(await mutate(req.user!, 'events', 'обновил снаряжение для мероприятия', state => {
+      const entity = getEntity(state, 'events', String(req.params.id));
+      if (entity.status === 'draft' && !hasCapability(req.user!, 'content.manage')) throw notFound();
+      const participant = entity.participants.find(p => p.user.id === req.user!.id);
+      if (!participant) throw new HttpError(403, 'JOIN_REQUIRED', 'Сначала запишитесь на мероприятие');
+      if (entity.schedule && Date.parse(entity.schedule.end) <= Date.now()) throw new HttpError(409, 'EVENT_FINISHED', 'Мероприятие завершено');
+      if (new Set(items.map(item => item.id)).size !== items.length) throw new HttpError(400, 'DUPLICATE_ITEM', 'Предмет указан несколько раз');
+      participant.items = items.map(item => {
+        const catalogItem = state.items.find(existing => existing.id === item.id);
+        if (!catalogItem) throw new HttpError(400, 'UNKNOWN_ITEM', 'Предмет не найден в справочнике');
+        return { ...catalogItem, quantity: item.quantity };
+      });
+      return hydrateEntity(state, entity);
+    }, entityTarget));
+  });
+  app.put('/api/challenges/:id/results', async (req, res) => res.json(await mutate(req.user!, 'challenges', 'добавил результат в челлендж', state => setResult(state, String(req.params.id), req.user!, req.body), entityTarget)));
+  app.put('/api/books/:id/read', async (req, res) => {
+    const { read } = z.object({ read: z.boolean() }).strict().parse(req.body);
+    res.json(await mutate(req.user!, 'books', read ? 'прочитал книгу' : 'снял отметку о прочтении', state => {
+      const entity = getEntity(state, 'books', String(req.params.id));
+      if (entity.status === 'draft' && !hasCapability(req.user!, 'content.manage')) throw notFound();
+      entity.readers = (entity.readers ?? []).filter(user => user.id !== req.user!.id);
+      if (read) entity.readers.push(getUser(state, req.user!.id));
+      return hydrateEntity(state, entity);
+    }, entityTarget));
+    notify('users');
+  });
+  app.get('/api/:resource', async (req, res) => { const collection = resource(req); const params = query(req); res.json(await repo.read(state => listResource(visibleState(state, req.user!), collection, params))); });
+  app.get('/api/:resource/:id', async (req, res) => {
+    const collection = resource(req); const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
+    res.json({ data: await repo.read(raw => { const state = visibleState(raw, req.user!); return collection === 'users' ? hydrateUser(state, getUser(state, id)) : hydrateEntity(state, getEntity(state, collection, id)); }) });
+  });
+  app.post('/api/:resource', async (req, res) => {
+    const collection = resource(req);
+    if (collection === 'users') throw new HttpError(400, 'TELEGRAM_REQUIRED', 'Участники создаются при входе через Telegram');
+    res.status(201).json(await mutate(req.user!, collection, 'добавил запись', state => createEntity(state, collection, req.body, req.user!), entityTarget));
+  });
+  app.patch('/api/:resource/:id', async (req, res) => {
+    const collection = resource(req); const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
+    if (collection === 'users') res.json(await mutate(req.user!, collection, 'обновил профиль', state => updateProfile(state, id, req.body, req.user!), user => ({ title: user.name, path: userPath(user) })));
+    else res.json(await mutate(req.user!, collection, 'изменил запись', state => editEntity(state, collection, id, req.body, req.user!), entityTarget));
+  });
+  app.delete('/api/:resource/:id', async (req, res) => {
+    const collection = resource(req); const id = String(req.params.id);
+    requireCapability(req.user!, collection === 'users' ? 'members.manage' : 'content.manage');
+    res.json(await mutate(req.user!, collection, 'удалил запись', state => {
+      if (collection === 'users') {
+        const userId = getUser(state, id).id;
+        if (userId === req.user!.id) throw new HttpError(409, 'SELF_DELETE', 'Нельзя удалить собственную административную учётную запись');
+        state.users = state.users.filter(user => user.id !== userId);
+        for (const entity of state.entities) {
+          entity.participants = entity.participants.filter(p => p.user.id !== userId);
+          entity.results = entity.results?.filter(r => r.user.id !== userId);
+          entity.readers = entity.readers?.filter(user => user.id !== userId);
+          if (entity.author?.id === userId) delete entity.author;
+        }
+        for (const [token, session] of Object.entries(state.sessions)) if (session.userId === userId) delete state.sessions[token];
+        for (const [telegramId, linkedUserId] of Object.entries(state.telegramUsers)) if (linkedUserId === userId) delete state.telegramUsers[telegramId];
+        for (const [requestId, request] of Object.entries(state.authRequests)) if (request.userId === userId) delete state.authRequests[requestId];
+      } else {
+        const deletedEntity = getEntity(state, collection, id);
+        if (collection === 'teams' && state.entities.some(entity => entity.type === 'challenges' && (entity.participants.some(p => p.team?.id === id) || entity.results?.some(r => r.team?.id === id)))) throw new HttpError(409, 'TEAM_HISTORY_EXISTS', 'У команды есть история челленджей. Переведите её в архив.');
+        // A removed draft must not make its previously hidden activity public.
+        if (deletedEntity.status === 'draft') state.activities = state.activities.filter(activity => activity.target?.path !== `/${collection}/${id}`);
+        state.entities = state.entities.filter(entity => entity.id !== id);
+      }
+      return { success: true };
+    }));
+  });
+  app.use('/api', (_req, _res, next) => next(notFound()));
+  const staticDirectory = process.env.STATIC_DIR ? resolve(process.env.STATIC_DIR) : undefined;
+  if (config.production && staticDirectory && existsSync(resolve(staticDirectory, 'index.html'))) {
+    app.use(express.static(staticDirectory, { index: false, maxAge: '1h' }));
+    app.get('/{*path}', (_req, res) => { res.set('Cache-Control', 'no-cache'); res.sendFile(resolve(staticDirectory, 'index.html')); });
+  }
+  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error instanceof z.ZodError) { res.status(400).json({ error: { code: 'VALIDATION', message: error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') } }); return; }
+    const trusted = error instanceof HttpError;
+    const status = trusted ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
+    if (status >= 500) console.error('API operation failed:', trusted ? error.code : error.name ?? 'Error');
+    res.status(status).json({ error: { code: trusted ? error.code : status === 500 ? 'INTERNAL_ERROR' : 'INVALID_BODY', message: trusted ? error.message : status === 500 ? 'Не удалось выполнить запрос. Попробуйте ещё раз.' : 'Некорректный JSON или превышен размер запроса' } });
+  };
+  app.use(errorHandler);
+  return { app, auth };
+}

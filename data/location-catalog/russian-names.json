@@ -1,0 +1,4780 @@
+{
+  "names": {
+    "452949": {
+      "name": "Удомля",
+      "sourceCountry": "RU"
+    },
+    "461698": {
+      "name": "Сосновка",
+      "sourceCountry": "RU"
+    },
+    "461699": {
+      "name": "Сасово",
+      "sourceCountry": "RU"
+    },
+    "461740": {
+      "name": "Зюзино",
+      "sourceCountry": "RU"
+    },
+    "461835": {
+      "name": "Зябликово",
+      "sourceCountry": "RU"
+    },
+    "461910": {
+      "name": "Зверево",
+      "sourceCountry": "RU"
+    },
+    "461920": {
+      "name": "Звенигород",
+      "sourceCountry": "RU"
+    },
+    "462444": {
+      "name": "Златоуст",
+      "sourceCountry": "RU"
+    },
+    "462522": {
+      "name": "Зимовники",
+      "sourceCountry": "RU"
+    },
+    "462745": {
+      "name": "Жулебино",
+      "sourceCountry": "RU"
+    },
+    "462755": {
+      "name": "Жуковский",
+      "sourceCountry": "RU"
+    },
+    "462822": {
+      "name": "Жуковка",
+      "sourceCountry": "RU"
+    },
+    "462984": {
+      "name": "Жирновск",
+      "sourceCountry": "RU"
+    },
+    "463082": {
+      "name": "Жигулёвск",
+      "sourceCountry": "RU"
+    },
+    "463217": {
+      "name": "Жердевка",
+      "sourceCountry": "RU"
+    },
+    "463340": {
+      "name": "Железноводск",
+      "sourceCountry": "RU"
+    },
+    "463343": {
+      "name": "Железногорск",
+      "sourceCountry": "RU"
+    },
+    "463355": {
+      "name": "Железнодорожный",
+      "sourceCountry": "RU"
+    },
+    "463637": {
+      "name": "Зерноград",
+      "sourceCountry": "RU"
+    },
+    "463824": {
+      "name": "Зеленокумск",
+      "sourceCountry": "RU"
+    },
+    "463828": {
+      "name": "Зеленоградск",
+      "sourceCountry": "RU"
+    },
+    "463829": {
+      "name": "Зеленоград",
+      "sourceCountry": "RU"
+    },
+    "463835": {
+      "name": "Зеленодольск",
+      "sourceCountry": "RU"
+    },
+    "463885": {
+      "name": "Зеленчукская",
+      "sourceCountry": "RU"
+    },
+    "464101": {
+      "name": "Заволжье",
+      "sourceCountry": "RU"
+    },
+    "464176": {
+      "name": "Заветы Ильича",
+      "sourceCountry": "RU"
+    },
+    "464625": {
+      "name": "Заречный",
+      "sourceCountry": "RU"
+    },
+    "464687": {
+      "name": "Зарайск",
+      "sourceCountry": "RU"
+    },
+    "464790": {
+      "name": "Заполярный",
+      "sourceCountry": "RU"
+    },
+    "465057": {
+      "name": "Замоскворечье",
+      "sourceCountry": "RU"
+    },
+    "465543": {
+      "name": "Заинск",
+      "sourceCountry": "RU"
+    },
+    "466171": {
+      "name": "Калининец",
+      "sourceCountry": "RU"
+    },
+    "466215": {
+      "name": "Юрьев-Польский",
+      "sourceCountry": "RU"
+    },
+    "466806": {
+      "name": "Йошкар-Ола",
+      "sourceCountry": "RU"
+    },
+    "466885": {
+      "name": "Ейск",
+      "sourceCountry": "RU"
+    },
+    "466989": {
+      "name": "Ессентукская",
+      "sourceCountry": "RU"
+    },
+    "466990": {
+      "name": "Ессентуки",
+      "sourceCountry": "RU"
+    },
+    "467120": {
+      "name": "Ершов",
+      "sourceCountry": "RU"
+    },
+    "467525": {
+      "name": "Емва",
+      "sourceCountry": "RU"
+    },
+    "467854": {
+      "name": "Елизаветинская",
+      "sourceCountry": "RU"
+    },
+    "467978": {
+      "name": "Елец",
+      "sourceCountry": "RU"
+    },
+    "468063": {
+      "name": "Елань",
+      "sourceCountry": "RU"
+    },
+    "468082": {
+      "name": "Елабуга",
+      "sourceCountry": "RU"
+    },
+    "468250": {
+      "name": "Егорьевск",
+      "sourceCountry": "RU"
+    },
+    "468307": {
+      "name": "Егорлыкская",
+      "sourceCountry": "RU"
+    },
+    "468390": {
+      "name": "Ефремов",
+      "sourceCountry": "RU"
+    },
+    "468657": {
+      "name": "Ясный",
+      "sourceCountry": "RU"
+    },
+    "468809": {
+      "name": "Ясенево",
+      "sourceCountry": "RU"
+    },
+    "468866": {
+      "name": "Ярцево",
+      "sourceCountry": "RU"
+    },
+    "468902": {
+      "name": "Ярославль",
+      "sourceCountry": "RU"
+    },
+    "469005": {
+      "name": "Яранск",
+      "sourceCountry": "RU"
+    },
+    "469178": {
+      "name": "Янаул",
+      "sourceCountry": "RU"
+    },
+    "469707": {
+      "name": "Ягры",
+      "sourceCountry": "RU"
+    },
+    "469844": {
+      "name": "Яблоновский",
+      "sourceCountry": "RU"
+    },
+    "470252": {
+      "name": "Вышний Волочёк",
+      "sourceCountry": "RU"
+    },
+    "470338": {
+      "name": "Выселки",
+      "sourceCountry": "RU"
+    },
+    "470444": {
+      "name": "Выкса",
+      "sourceCountry": "RU"
+    },
+    "470451": {
+      "name": "Выхино-Жулебино",
+      "sourceCountry": "RU"
+    },
+    "470546": {
+      "name": "Выборг",
+      "sourceCountry": "RU"
+    },
+    "470666": {
+      "name": "Вязники",
+      "sourceCountry": "RU"
+    },
+    "470676": {
+      "name": "Вязьма",
+      "sourceCountry": "RU"
+    },
+    "470734": {
+      "name": "Вятские Поляны",
+      "sourceCountry": "RU"
+    },
+    "471101": {
+      "name": "Всеволожск",
+      "sourceCountry": "RU"
+    },
+    "471430": {
+      "name": "Воткинск",
+      "sourceCountry": "RU"
+    },
+    "471456": {
+      "name": "Востряково",
+      "sourceCountry": "RU"
+    },
+    "471457": {
+      "name": "Востряково",
+      "sourceCountry": "RU"
+    },
+    "471656": {
+      "name": "Воскресенск",
+      "sourceCountry": "RU"
+    },
+    "472045": {
+      "name": "Воронеж",
+      "sourceCountry": "RU"
+    },
+    "472072": {
+      "name": "Алтуфьевский",
+      "sourceCountry": "RU"
+    },
+    "472079": {
+      "name": "Воробьево",
+      "sourceCountry": "RU"
+    },
+    "472231": {
+      "name": "Волжский",
+      "sourceCountry": "RU"
+    },
+    "472278": {
+      "name": "Вольск",
+      "sourceCountry": "RU"
+    },
+    "472433": {
+      "name": "Волоколамск",
+      "sourceCountry": "RU"
+    },
+    "472459": {
+      "name": "Вологда",
+      "sourceCountry": "RU"
+    },
+    "472722": {
+      "name": "Волхов",
+      "sourceCountry": "RU"
+    },
+    "472732": {
+      "name": "Нагорный",
+      "sourceCountry": "RU"
+    },
+    "472750": {
+      "name": "Волгореченск",
+      "sourceCountry": "RU"
+    },
+    "472757": {
+      "name": "Волгоград",
+      "sourceCountry": "RU"
+    },
+    "472761": {
+      "name": "Волгодонск",
+      "sourceCountry": "RU"
+    },
+    "473127": {
+      "name": "Нововладыкино",
+      "sourceCountry": "RU"
+    },
+    "473247": {
+      "name": "Владимир",
+      "sourceCountry": "RU"
+    },
+    "473249": {
+      "name": "Владикавказ",
+      "sourceCountry": "RU"
+    },
+    "473778": {
+      "name": "Видное",
+      "sourceCountry": "RU"
+    },
+    "473788": {
+      "name": "Вичуга",
+      "sourceCountry": "RU"
+    },
+    "473972": {
+      "name": "Вешняки",
+      "sourceCountry": "RU"
+    },
+    "475777": {
+      "name": "Верещагино",
+      "sourceCountry": "RU"
+    },
+    "475881": {
+      "name": "Венёв",
+      "sourceCountry": "RU"
+    },
+    "475938": {
+      "name": "Вельск",
+      "sourceCountry": "RU"
+    },
+    "476062": {
+      "name": "Великий Устюг",
+      "sourceCountry": "RU"
+    },
+    "476077": {
+      "name": "Великие Луки",
+      "sourceCountry": "RU"
+    },
+    "476368": {
+      "name": "Ватутино",
+      "sourceCountry": "RU"
+    },
+    "477192": {
+      "name": "Валуйки",
+      "sourceCountry": "RU"
+    },
+    "477301": {
+      "name": "Валдай",
+      "sourceCountry": "RU"
+    },
+    "477377": {
+      "name": "Вагоноремонт",
+      "sourceCountry": "RU"
+    },
+    "477494": {
+      "name": "Узловая",
+      "sourceCountry": "RU"
+    },
+    "477626": {
+      "name": "Уварово",
+      "sourceCountry": "RU"
+    },
+    "477656": {
+      "name": "Ува",
+      "sourceCountry": "RU"
+    },
+    "478044": {
+      "name": "Усть-Лабинск",
+      "sourceCountry": "RU"
+    },
+    "478071": {
+      "name": "Усть-Катав",
+      "sourceCountry": "RU"
+    },
+    "478130": {
+      "name": "Усть-Джегута",
+      "sourceCountry": "RU"
+    },
+    "478317": {
+      "name": "Усмань",
+      "sourceCountry": "RU"
+    },
+    "478544": {
+      "name": "Урюпинск",
+      "sourceCountry": "RU"
+    },
+    "478581": {
+      "name": "Урус-Мартан",
+      "sourceCountry": "RU"
+    },
+    "478724": {
+      "name": "Урицк",
+      "sourceCountry": "RU"
+    },
+    "479028": {
+      "name": "Унеча",
+      "sourceCountry": "RU"
+    },
+    "479123": {
+      "name": "Ульяновск",
+      "sourceCountry": "RU"
+    },
+    "479411": {
+      "name": "Ухта",
+      "sourceCountry": "RU"
+    },
+    "479532": {
+      "name": "Углич",
+      "sourceCountry": "RU"
+    },
+    "479561": {
+      "name": "Уфа",
+      "sourceCountry": "RU"
+    },
+    "479687": {
+      "name": "Учкекен",
+      "sourceCountry": "RU"
+    },
+    "479703": {
+      "name": "Учалы",
+      "sourceCountry": "RU"
+    },
+    "479933": {
+      "name": "Тырныауз",
+      "sourceCountry": "RU"
+    },
+    "480060": {
+      "name": "Тверь",
+      "sourceCountry": "RU"
+    },
+    "480089": {
+      "name": "Туймазы",
+      "sourceCountry": "RU"
+    },
+    "480122": {
+      "name": "Тутаев",
+      "sourceCountry": "RU"
+    },
+    "480562": {
+      "name": "Тула",
+      "sourceCountry": "RU"
+    },
+    "480685": {
+      "name": "Тучково",
+      "sourceCountry": "RU"
+    },
+    "480716": {
+      "name": "Туапсе",
+      "sourceCountry": "RU"
+    },
+    "480876": {
+      "name": "Цимлянск",
+      "sourceCountry": "RU"
+    },
+    "481350": {
+      "name": "Трубчевск",
+      "sourceCountry": "RU"
+    },
+    "481453": {
+      "name": "Тропарёво",
+      "sourceCountry": "RU"
+    },
+    "481605": {
+      "name": "Троицкая",
+      "sourceCountry": "RU"
+    },
+    "481608": {
+      "name": "Троицк",
+      "sourceCountry": "RU"
+    },
+    "481964": {
+      "name": "Тосно",
+      "sourceCountry": "RU"
+    },
+    "481985": {
+      "name": "Торжок",
+      "sourceCountry": "RU"
+    },
+    "482260": {
+      "name": "Томилино",
+      "sourceCountry": "RU"
+    },
+    "482283": {
+      "name": "Тольятти",
+      "sourceCountry": "RU"
+    },
+    "482965": {
+      "name": "Тимашёвск",
+      "sourceCountry": "RU"
+    },
+    "483019": {
+      "name": "Тихвин",
+      "sourceCountry": "RU"
+    },
+    "483029": {
+      "name": "Тихорецк",
+      "sourceCountry": "RU"
+    },
+    "483137": {
+      "name": "Тейково",
+      "sourceCountry": "RU"
+    },
+    "483495": {
+      "name": "Терек",
+      "sourceCountry": "RU"
+    },
+    "483551": {
+      "name": "Тёплый Стан",
+      "sourceCountry": "RU"
+    },
+    "483661": {
+      "name": "Темрюк",
+      "sourceCountry": "RU"
+    },
+    "483826": {
+      "name": "Текстильщики",
+      "sourceCountry": "RU"
+    },
+    "483883": {
+      "name": "Тбилисская",
+      "sourceCountry": "RU"
+    },
+    "484646": {
+      "name": "Тамбов",
+      "sourceCountry": "RU"
+    },
+    "484856": {
+      "name": "Агидель",
+      "sourceCountry": "RU"
+    },
+    "484907": {
+      "name": "Таганрог",
+      "sourceCountry": "RU"
+    },
+    "484912": {
+      "name": "Таганский",
+      "sourceCountry": "RU"
+    },
+    "484972": {
+      "name": "Сызрань",
+      "sourceCountry": "RU"
+    },
+    "485239": {
+      "name": "Сыктывкар",
+      "sourceCountry": "RU"
+    },
+    "485432": {
+      "name": "Свободы",
+      "sourceCountry": "RU"
+    },
+    "485630": {
+      "name": "Свиблово",
+      "sourceCountry": "RU"
+    },
+    "485639": {
+      "name": "Светогорск",
+      "sourceCountry": "RU"
+    },
+    "485660": {
+      "name": "Светлый",
+      "sourceCountry": "RU"
+    },
+    "485698": {
+      "name": "Светлоград",
+      "sourceCountry": "RU"
+    },
+    "485871": {
+      "name": "Суворовская",
+      "sourceCountry": "RU"
+    },
+    "486071": {
+      "name": "Суровикино",
+      "sourceCountry": "RU"
+    },
+    "486110": {
+      "name": "Сурхахи",
+      "sourceCountry": "RU"
+    },
+    "486665": {
+      "name": "Сухиничи",
+      "sourceCountry": "RU"
+    },
+    "486968": {
+      "name": "Ступино",
+      "sourceCountry": "RU"
+    },
+    "487095": {
+      "name": "Струнино",
+      "sourceCountry": "RU"
+    },
+    "487147": {
+      "name": "Строитель",
+      "sourceCountry": "RU"
+    },
+    "487150": {
+      "name": "Строгино",
+      "sourceCountry": "RU"
+    },
+    "487495": {
+      "name": "Стерлитамак",
+      "sourceCountry": "RU"
+    },
+    "487846": {
+      "name": "Ставрополь",
+      "sourceCountry": "RU"
+    },
+    "487928": {
+      "name": "Старый Оскол",
+      "sourceCountry": "RU"
+    },
+    "488635": {
+      "name": "Старощербиновская",
+      "sourceCountry": "RU"
+    },
+    "488742": {
+      "name": "Староминская",
+      "sourceCountry": "RU"
+    },
+    "488852": {
+      "name": "Стародуб",
+      "sourceCountry": "RU"
+    },
+    "489088": {
+      "name": "Старая Русса",
+      "sourceCountry": "RU"
+    },
+    "489162": {
+      "name": "Старая Купавна",
+      "sourceCountry": "RU"
+    },
+    "489226": {
+      "name": "Старая Деревня",
+      "sourceCountry": "RU"
+    },
+    "490067": {
+      "name": "Советск",
+      "sourceCountry": "RU"
+    },
+    "490068": {
+      "name": "Советск",
+      "sourceCountry": "RU"
+    },
+    "490172": {
+      "name": "Сосновый Бор",
+      "sourceCountry": "RU"
+    },
+    "490377": {
+      "name": "Сосновая Поляна",
+      "sourceCountry": "RU"
+    },
+    "490391": {
+      "name": "Сосногорск",
+      "sourceCountry": "RU"
+    },
+    "490466": {
+      "name": "Сортавала",
+      "sourceCountry": "RU"
+    },
+    "490554": {
+      "name": "Сорочинск",
+      "sourceCountry": "RU"
+    },
+    "490971": {
+      "name": "Солнцево",
+      "sourceCountry": "RU"
+    },
+    "490996": {
+      "name": "Солнечногорск",
+      "sourceCountry": "RU"
+    },
+    "491019": {
+      "name": "Соль-Илецк",
+      "sourceCountry": "RU"
+    },
+    "491023": {
+      "name": "Соликамск",
+      "sourceCountry": "RU"
+    },
+    "491250": {
+      "name": "Сокольники",
+      "sourceCountry": "RU"
+    },
+    "491280": {
+      "name": "Сокол",
+      "sourceCountry": "RU"
+    },
+    "491281": {
+      "name": "Сокол",
+      "sourceCountry": "RU"
+    },
+    "491352": {
+      "name": "Софрино",
+      "sourceCountry": "RU"
+    },
+    "491422": {
+      "name": "Сочи",
+      "sourceCountry": "RU"
+    },
+    "491480": {
+      "name": "Собинка",
+      "sourceCountry": "RU"
+    },
+    "491687": {
+      "name": "Смоленск",
+      "sourceCountry": "RU"
+    },
+    "491882": {
+      "name": "Слободской",
+      "sourceCountry": "RU"
+    },
+    "491895": {
+      "name": "Слободка",
+      "sourceCountry": "RU"
+    },
+    "492094": {
+      "name": "Славянск-на-Кубани",
+      "sourceCountry": "RU"
+    },
+    "492162": {
+      "name": "Сланцы",
+      "sourceCountry": "RU"
+    },
+    "492376": {
+      "name": "Скопин",
+      "sourceCountry": "RU"
+    },
+    "492448": {
+      "name": "Сходня",
+      "sourceCountry": "RU"
+    },
+    "492944": {
+      "name": "Сим",
+      "sourceCountry": "RU"
+    },
+    "493160": {
+      "name": "Сибай",
+      "sourceCountry": "RU"
+    },
+    "493231": {
+      "name": "Шуя",
+      "sourceCountry": "RU"
+    },
+    "493316": {
+      "name": "Шушары",
+      "sourceCountry": "RU"
+    },
+    "493463": {
+      "name": "Шумерля",
+      "sourceCountry": "RU"
+    },
+    "493702": {
+      "name": "Михайловск",
+      "sourceCountry": "RU"
+    },
+    "494427": {
+      "name": "Шилово",
+      "sourceCountry": "RU"
+    },
+    "495062": {
+      "name": "Шексна",
+      "sourceCountry": "RU"
+    },
+    "495112": {
+      "name": "Шебекино",
+      "sourceCountry": "RU"
+    },
+    "495136": {
+      "name": "Щукино",
+      "sourceCountry": "RU"
+    },
+    "495206": {
+      "name": "Щигры",
+      "sourceCountry": "RU"
+    },
+    "495260": {
+      "name": "Щербинка",
+      "sourceCountry": "RU"
+    },
+    "495344": {
+      "name": "Щёлково",
+      "sourceCountry": "RU"
+    },
+    "495518": {
+      "name": "Шатура",
+      "sourceCountry": "RU"
+    },
+    "495619": {
+      "name": "Шарья",
+      "sourceCountry": "RU"
+    },
+    "495957": {
+      "name": "Шали",
+      "sourceCountry": "RU"
+    },
+    "496012": {
+      "name": "Шахунья",
+      "sourceCountry": "RU"
+    },
+    "496015": {
+      "name": "Шахты",
+      "sourceCountry": "RU"
+    },
+    "496267": {
+      "name": "Северская",
+      "sourceCountry": "RU"
+    },
+    "496269": {
+      "name": "Северо-Задонск",
+      "sourceCountry": "RU"
+    },
+    "496278": {
+      "name": "Североморск",
+      "sourceCountry": "RU"
+    },
+    "496285": {
+      "name": "Северодвинск",
+      "sourceCountry": "RU"
+    },
+    "496348": {
+      "name": "Северный",
+      "sourceCountry": "RU"
+    },
+    "496456": {
+      "name": "Сетунь",
+      "sourceCountry": "RU"
+    },
+    "496478": {
+      "name": "Сестрорецк",
+      "sourceCountry": "RU"
+    },
+    "496519": {
+      "name": "Сертолово",
+      "sourceCountry": "RU"
+    },
+    "496527": {
+      "name": "Серпухов",
+      "sourceCountry": "RU"
+    },
+    "496638": {
+      "name": "Сергиев Посад",
+      "sourceCountry": "RU"
+    },
+    "496802": {
+      "name": "Сергач",
+      "sourceCountry": "RU"
+    },
+    "496934": {
+      "name": "Сердобск",
+      "sourceCountry": "RU"
+    },
+    "497206": {
+      "name": "Семилуки",
+      "sourceCountry": "RU"
+    },
+    "497218": {
+      "name": "Семикаракорск",
+      "sourceCountry": "RU"
+    },
+    "497271": {
+      "name": "Семёновское",
+      "sourceCountry": "RU"
+    },
+    "497450": {
+      "name": "Семёнов",
+      "sourceCountry": "RU"
+    },
+    "497610": {
+      "name": "Сельцо",
+      "sourceCountry": "RU"
+    },
+    "497927": {
+      "name": "Сегежа",
+      "sourceCountry": "RU"
+    },
+    "498418": {
+      "name": "Сатка",
+      "sourceCountry": "RU"
+    },
+    "498525": {
+      "name": "Саров",
+      "sourceCountry": "RU"
+    },
+    "498677": {
+      "name": "Саратов",
+      "sourceCountry": "RU"
+    },
+    "498687": {
+      "name": "Сарапул",
+      "sourceCountry": "RU"
+    },
+    "498698": {
+      "name": "Саранск",
+      "sourceCountry": "RU"
+    },
+    "498708": {
+      "name": "Саракташ",
+      "sourceCountry": "RU"
+    },
+    "498817": {
+      "name": "Санкт-Петербург",
+      "sourceCountry": "RU"
+    },
+    "499099": {
+      "name": "Самара",
+      "sourceCountry": "RU"
+    },
+    "499161": {
+      "name": "Сальск",
+      "sourceCountry": "RU"
+    },
+    "499292": {
+      "name": "Салават",
+      "sourceCountry": "RU"
+    },
+    "499453": {
+      "name": "Сафоново",
+      "sourceCountry": "RU"
+    },
+    "499717": {
+      "name": "Ржев",
+      "sourceCountry": "RU"
+    },
+    "499975": {
+      "name": "Рыбное",
+      "sourceCountry": "RU"
+    },
+    "500004": {
+      "name": "Рыбинск",
+      "sourceCountry": "RU"
+    },
+    "500019": {
+      "name": "Рыбацкое",
+      "sourceCountry": "RU"
+    },
+    "500047": {
+      "name": "Ряжск",
+      "sourceCountry": "RU"
+    },
+    "500096": {
+      "name": "Рязань",
+      "sourceCountry": "RU"
+    },
+    "500299": {
+      "name": "Рузаевка",
+      "sourceCountry": "RU"
+    },
+    "500843": {
+      "name": "Рублёво",
+      "sourceCountry": "RU"
+    },
+    "500886": {
+      "name": "Ртищево",
+      "sourceCountry": "RU"
+    },
+    "501183": {
+      "name": "Ростов Великий",
+      "sourceCountry": "RU"
+    },
+    "501187": {
+      "name": "Ростокино",
+      "sourceCountry": "RU"
+    },
+    "501215": {
+      "name": "Россошь",
+      "sourceCountry": "RU"
+    },
+    "501231": {
+      "name": "Россошь",
+      "sourceCountry": "RU"
+    },
+    "501283": {
+      "name": "Рославль",
+      "sourceCountry": "RU"
+    },
+    "501730": {
+      "name": "Родники",
+      "sourceCountry": "RU"
+    },
+    "502011": {
+      "name": "Ревда",
+      "sourceCountry": "RU"
+    },
+    "502018": {
+      "name": "Реутов",
+      "sourceCountry": "RU"
+    },
+    "502400": {
+      "name": "Разумное",
+      "sourceCountry": "RU"
+    },
+    "502540": {
+      "name": "Раевский",
+      "sourceCountry": "RU"
+    },
+    "502793": {
+      "name": "Рассказово",
+      "sourceCountry": "RU"
+    },
+    "502965": {
+      "name": "Раменское",
+      "sourceCountry": "RU"
+    },
+    "502971": {
+      "name": "Раменки",
+      "sourceCountry": "RU"
+    },
+    "503550": {
+      "name": "Пятигорск",
+      "sourceCountry": "RU"
+    },
+    "503977": {
+      "name": "Пушкино",
+      "sourceCountry": "RU"
+    },
+    "504003": {
+      "name": "Пушкин",
+      "sourceCountry": "RU"
+    },
+    "504042": {
+      "name": "Пущино",
+      "sourceCountry": "RU"
+    },
+    "504250": {
+      "name": "Пугачёв",
+      "sourceCountry": "RU"
+    },
+    "504341": {
+      "name": "Псков",
+      "sourceCountry": "RU"
+    },
+    "504576": {
+      "name": "Протвино",
+      "sourceCountry": "RU"
+    },
+    "504831": {
+      "name": "Пролетарск",
+      "sourceCountry": "RU"
+    },
+    "504935": {
+      "name": "Прохладный",
+      "sourceCountry": "RU"
+    },
+    "505014": {
+      "name": "Приютово",
+      "sourceCountry": "RU"
+    },
+    "505057": {
+      "name": "Приволжский",
+      "sourceCountry": "RU"
+    },
+    "505060": {
+      "name": "Приволжск",
+      "sourceCountry": "RU"
+    },
+    "505230": {
+      "name": "Приозерск",
+      "sourceCountry": "RU"
+    },
+    "505259": {
+      "name": "Приморско-Ахтарск",
+      "sourceCountry": "RU"
+    },
+    "505421": {
+      "name": "Придонской",
+      "sourceCountry": "RU"
+    },
+    "505806": {
+      "name": "Поворино",
+      "sourceCountry": "RU"
+    },
+    "506043": {
+      "name": "Котловка",
+      "sourceCountry": "RU"
+    },
+    "506117": {
+      "name": "Аннино",
+      "sourceCountry": "RU"
+    },
+    "506762": {
+      "name": "Полярные Зори",
+      "sourceCountry": "RU"
+    },
+    "506763": {
+      "name": "Полярный",
+      "sourceCountry": "RU"
+    },
+    "507338": {
+      "name": "Покровское-Стрешнёво",
+      "sourceCountry": "RU"
+    },
+    "507599": {
+      "name": "Покров",
+      "sourceCountry": "RU"
+    },
+    "507624": {
+      "name": "Похвистнево",
+      "sourceCountry": "RU"
+    },
+    "508034": {
+      "name": "Подпорожье",
+      "sourceCountry": "RU"
+    },
+    "508101": {
+      "name": "Подольск",
+      "sourceCountry": "RU"
+    },
+    "508751": {
+      "name": "Рязанский",
+      "sourceCountry": "RU"
+    },
+    "509598": {
+      "name": "Пикалёво",
+      "sourceCountry": "RU"
+    },
+    "509697": {
+      "name": "Петушки",
+      "sourceCountry": "RU"
+    },
+    "509820": {
+      "name": "Петрозаводск",
+      "sourceCountry": "RU"
+    },
+    "509981": {
+      "name": "Петровская",
+      "sourceCountry": "RU"
+    },
+    "509987": {
+      "name": "Петровск",
+      "sourceCountry": "RU"
+    },
+    "510291": {
+      "name": "Петергоф",
+      "sourceCountry": "RU"
+    },
+    "510364": {
+      "name": "Пестово",
+      "sourceCountry": "RU"
+    },
+    "510808": {
+      "name": "Первоуральск",
+      "sourceCountry": "RU"
+    },
+    "511196": {
+      "name": "Пермь",
+      "sourceCountry": "RU"
+    },
+    "511359": {
+      "name": "Переславль-Залесский",
+      "sourceCountry": "RU"
+    },
+    "511510": {
+      "name": "Ново-Переделкино",
+      "sourceCountry": "RU"
+    },
+    "511565": {
+      "name": "Пенза",
+      "sourceCountry": "RU"
+    },
+    "511794": {
+      "name": "Печора",
+      "sourceCountry": "RU"
+    },
+    "512023": {
+      "name": "Павловский Посад",
+      "sourceCountry": "RU"
+    },
+    "512051": {
+      "name": "Павловская",
+      "sourceCountry": "RU"
+    },
+    "512052": {
+      "name": "Павловск",
+      "sourceCountry": "RU"
+    },
+    "512053": {
+      "name": "Павловск",
+      "sourceCountry": "RU"
+    },
+    "512382": {
+      "name": "Пашковский",
+      "sourceCountry": "RU"
+    },
+    "513042": {
+      "name": "Палласовка",
+      "sourceCountry": "RU"
+    },
+    "513378": {
+      "name": "Озёры",
+      "sourceCountry": "RU"
+    },
+    "513471": {
+      "name": "Озерки",
+      "sourceCountry": "RU"
+    },
+    "513883": {
+      "name": "Отрадный",
+      "sourceCountry": "RU"
+    },
+    "513896": {
+      "name": "Отрадное",
+      "sourceCountry": "RU"
+    },
+    "513898": {
+      "name": "Отрадное",
+      "sourceCountry": "RU"
+    },
+    "513911": {
+      "name": "Отрадная",
+      "sourceCountry": "RU"
+    },
+    "514171": {
+      "name": "Остров",
+      "sourceCountry": "RU"
+    },
+    "514198": {
+      "name": "Острогожск",
+      "sourceCountry": "RU"
+    },
+    "514259": {
+      "name": "Осташков",
+      "sourceCountry": "RU"
+    },
+    "514284": {
+      "name": "Останкинский",
+      "sourceCountry": "RU"
+    },
+    "514706": {
+      "name": "Оса",
+      "sourceCountry": "RU"
+    },
+    "514734": {
+      "name": "Орск",
+      "sourceCountry": "RU"
+    },
+    "514796": {
+      "name": "Орловский",
+      "sourceCountry": "RU"
+    },
+    "515003": {
+      "name": "Оренбург",
+      "sourceCountry": "RU"
+    },
+    "515012": {
+      "name": "Орёл",
+      "sourceCountry": "RU"
+    },
+    "515024": {
+      "name": "Орехово-Зуево",
+      "sourceCountry": "RU"
+    },
+    "515027": {
+      "name": "Орехово-Борисово Северное",
+      "sourceCountry": "RU"
+    },
+    "515083": {
+      "name": "Сунжа",
+      "sourceCountry": "RU"
+    },
+    "515246": {
+      "name": "Онега",
+      "sourceCountry": "RU"
+    },
+    "515267": {
+      "name": "Омутнинск",
+      "sourceCountry": "RU"
+    },
+    "515698": {
+      "name": "Оленегорск",
+      "sourceCountry": "RU"
+    },
+    "515804": {
+      "name": "Цоцин-Юрт",
+      "sourceCountry": "RU"
+    },
+    "515879": {
+      "name": "Октябрьский",
+      "sourceCountry": "RU"
+    },
+    "515938": {
+      "name": "Октябрьск",
+      "sourceCountry": "RU"
+    },
+    "516215": {
+      "name": "Одинцово",
+      "sourceCountry": "RU"
+    },
+    "516256": {
+      "name": "Очёр",
+      "sourceCountry": "RU"
+    },
+    "516264": {
+      "name": "Очаково-Матвеевское",
+      "sourceCountry": "RU"
+    },
+    "516436": {
+      "name": "Обнинск",
+      "sourceCountry": "RU"
+    },
+    "516576": {
+      "name": "Нытва",
+      "sourceCountry": "RU"
+    },
+    "516647": {
+      "name": "Няндома",
+      "sourceCountry": "RU"
+    },
+    "516716": {
+      "name": "Нурлат",
+      "sourceCountry": "RU"
+    },
+    "516931": {
+      "name": "Новый Оскол",
+      "sourceCountry": "RU"
+    },
+    "517121": {
+      "name": "Новые Кузьминки",
+      "sourceCountry": "RU"
+    },
+    "517161": {
+      "name": "Новые Черёмушки",
+      "sourceCountry": "RU"
+    },
+    "517269": {
+      "name": "Новозыбков",
+      "sourceCountry": "RU"
+    },
+    "517716": {
+      "name": "Нововоронеж",
+      "sourceCountry": "RU"
+    },
+    "517739": {
+      "name": "Новоузенск",
+      "sourceCountry": "RU"
+    },
+    "517766": {
+      "name": "Новоульяновск",
+      "sourceCountry": "RU"
+    },
+    "517836": {
+      "name": "Новотроицк",
+      "sourceCountry": "RU"
+    },
+    "517842": {
+      "name": "Новотитаровская",
+      "sourceCountry": "RU"
+    },
+    "517963": {
+      "name": "Новошахтинск",
+      "sourceCountry": "RU"
+    },
+    "518255": {
+      "name": "Новороссийск",
+      "sourceCountry": "RU"
+    },
+    "518325": {
+      "name": "Новопокровская",
+      "sourceCountry": "RU"
+    },
+    "518383": {
+      "name": "Новопавловск",
+      "sourceCountry": "RU"
+    },
+    "518557": {
+      "name": "Новомосковск",
+      "sourceCountry": "RU"
+    },
+    "518602": {
+      "name": "Новомичуринск",
+      "sourceCountry": "RU"
+    },
+    "518657": {
+      "name": "Новокузьминки",
+      "sourceCountry": "RU"
+    },
+    "518659": {
+      "name": "Новокуйбышевск",
+      "sourceCountry": "RU"
+    },
+    "518682": {
+      "name": "Новокубанск",
+      "sourceCountry": "RU"
+    },
+    "518740": {
+      "name": "Новоховрино",
+      "sourceCountry": "RU"
+    },
+    "518879": {
+      "name": "Новогиреево",
+      "sourceCountry": "RU"
+    },
+    "518909": {
+      "name": "Новодвинск",
+      "sourceCountry": "RU"
+    },
+    "518970": {
+      "name": "Новочеркасск",
+      "sourceCountry": "RU"
+    },
+    "518976": {
+      "name": "Новочебоксарск",
+      "sourceCountry": "RU"
+    },
+    "519062": {
+      "name": "Новоаннинский",
+      "sourceCountry": "RU"
+    },
+    "519106": {
+      "name": "Новоалександровск",
+      "sourceCountry": "RU"
+    },
+    "519336": {
+      "name": "Великий Новгород",
+      "sourceCountry": "RU"
+    },
+    "519447": {
+      "name": "Новая Усмань",
+      "sourceCountry": "RU"
+    },
+    "519711": {
+      "name": "Новая деревня",
+      "sourceCountry": "RU"
+    },
+    "520068": {
+      "name": "Ногинск",
+      "sourceCountry": "RU"
+    },
+    "520204": {
+      "name": "Нижняя Тура",
+      "sourceCountry": "RU"
+    },
+    "520494": {
+      "name": "Нижний Тагил",
+      "sourceCountry": "RU"
+    },
+    "520555": {
+      "name": "Нижний Новгород",
+      "sourceCountry": "RU"
+    },
+    "520574": {
+      "name": "Нижний Ломов",
+      "sourceCountry": "RU"
+    },
+    "521118": {
+      "name": "Нижнекамск",
+      "sourceCountry": "RU"
+    },
+    "521416": {
+      "name": "Никулино",
+      "sourceCountry": "RU"
+    },
+    "521500": {
+      "name": "Никольское",
+      "sourceCountry": "RU"
+    },
+    "521509": {
+      "name": "Никольское",
+      "sourceCountry": "RU"
+    },
+    "521776": {
+      "name": "Никольск",
+      "sourceCountry": "RU"
+    },
+    "521874": {
+      "name": "Николаевск",
+      "sourceCountry": "RU"
+    },
+    "522260": {
+      "name": "Никель",
+      "sourceCountry": "RU"
+    },
+    "522301": {
+      "name": "Незлобная",
+      "sourceCountry": "RU"
+    },
+    "522377": {
+      "name": "Невинномысск",
+      "sourceCountry": "RU"
+    },
+    "522410": {
+      "name": "Невель",
+      "sourceCountry": "RU"
+    },
+    "522470": {
+      "name": "Нестеровская",
+      "sourceCountry": "RU"
+    },
+    "522594": {
+      "name": "Нерехта",
+      "sourceCountry": "RU"
+    },
+    "522775": {
+      "name": "Нелидово",
+      "sourceCountry": "RU"
+    },
+    "522942": {
+      "name": "Нефтекамск",
+      "sourceCountry": "RU"
+    },
+    "522945": {
+      "name": "Нефтегорск",
+      "sourceCountry": "RU"
+    },
+    "523064": {
+      "name": "Назрань",
+      "sourceCountry": "RU"
+    },
+    "523392": {
+      "name": "Нарьян-Мар",
+      "sourceCountry": "RU"
+    },
+    "523405": {
+      "name": "Нарткала",
+      "sourceCountry": "RU"
+    },
+    "523426": {
+      "name": "Наро-Фоминск",
+      "sourceCountry": "RU"
+    },
+    "523523": {
+      "name": "Нальчик",
+      "sourceCountry": "RU"
+    },
+    "523553": {
+      "name": "Нахабино",
+      "sourceCountry": "RU"
+    },
+    "523750": {
+      "name": "Набережные Челны",
+      "sourceCountry": "RU"
+    },
+    "523812": {
+      "name": "Мытищи",
+      "sourceCountry": "RU"
+    },
+    "524294": {
+      "name": "Муром",
+      "sourceCountry": "RU"
+    },
+    "524640": {
+      "name": "Мценск",
+      "sourceCountry": "RU"
+    },
+    "524699": {
+      "name": "Можга",
+      "sourceCountry": "RU"
+    },
+    "524712": {
+      "name": "Можайск",
+      "sourceCountry": "RU"
+    },
+    "524736": {
+      "name": "Моздок",
+      "sourceCountry": "RU"
+    },
+    "524809": {
+      "name": "Мостовской",
+      "sourceCountry": "RU"
+    },
+    "524901": {
+      "name": "Москва",
+      "sourceCountry": "RU"
+    },
+    "525138": {
+      "name": "Моршанск",
+      "sourceCountry": "RU"
+    },
+    "525162": {
+      "name": "Морозовск",
+      "sourceCountry": "RU"
+    },
+    "525396": {
+      "name": "Монино",
+      "sourceCountry": "RU"
+    },
+    "525404": {
+      "name": "Мончегорск",
+      "sourceCountry": "RU"
+    },
+    "526480": {
+      "name": "Минеральные Воды",
+      "sourceCountry": "RU"
+    },
+    "526558": {
+      "name": "Миллерово",
+      "sourceCountry": "RU"
+    },
+    "527012": {
+      "name": "Михайловка",
+      "sourceCountry": "RU"
+    },
+    "527057": {
+      "name": "Михалково",
+      "sourceCountry": "RU"
+    },
+    "527191": {
+      "name": "Мичуринск",
+      "sourceCountry": "RU"
+    },
+    "527361": {
+      "name": "Металлострой",
+      "sourceCountry": "RU"
+    },
+    "527529": {
+      "name": "Мензелинск",
+      "sourceCountry": "RU"
+    },
+    "527579": {
+      "name": "Менделеевск",
+      "sourceCountry": "RU"
+    },
+    "527717": {
+      "name": "Мелеуз",
+      "sourceCountry": "RU"
+    },
+    "527740": {
+      "name": "Меленки",
+      "sourceCountry": "RU"
+    },
+    "527888": {
+      "name": "Медвежьегорск",
+      "sourceCountry": "RU"
+    },
+    "527968": {
+      "name": "Медведовская",
+      "sourceCountry": "RU"
+    },
+    "528056": {
+      "name": "Медведево",
+      "sourceCountry": "RU"
+    },
+    "528109": {
+      "name": "Медногорск",
+      "sourceCountry": "RU"
+    },
+    "528293": {
+      "name": "Майкоп",
+      "sourceCountry": "RU"
+    },
+    "528454": {
+      "name": "Матвеевское",
+      "sourceCountry": "RU"
+    },
+    "529073": {
+      "name": "Маркс",
+      "sourceCountry": "RU"
+    },
+    "529237": {
+      "name": "Марьино",
+      "sourceCountry": "RU"
+    },
+    "529505": {
+      "name": "Мантурово",
+      "sourceCountry": "RU"
+    },
+    "530088": {
+      "name": "Ярославский",
+      "sourceCountry": "RU"
+    },
+    "530849": {
+      "name": "Малоярославец",
+      "sourceCountry": "RU"
+    },
+    "531129": {
+      "name": "Малгобек",
+      "sourceCountry": "RU"
+    },
+    "531820": {
+      "name": "Малаховка",
+      "sourceCountry": "RU"
+    },
+    "532096": {
+      "name": "Махачкала",
+      "sourceCountry": "RU"
+    },
+    "532288": {
+      "name": "Магнитогорск",
+      "sourceCountry": "RU"
+    },
+    "532459": {
+      "name": "Людиново",
+      "sourceCountry": "RU"
+    },
+    "532535": {
+      "name": "Люблино",
+      "sourceCountry": "RU"
+    },
+    "532615": {
+      "name": "Люберцы",
+      "sourceCountry": "RU"
+    },
+    "532657": {
+      "name": "Лыткарино",
+      "sourceCountry": "RU"
+    },
+    "532675": {
+      "name": "Лысьва",
+      "sourceCountry": "RU"
+    },
+    "532715": {
+      "name": "Лысково",
+      "sourceCountry": "RU"
+    },
+    "533067": {
+      "name": "Лужники",
+      "sourceCountry": "RU"
+    },
+    "533543": {
+      "name": "Луховицы",
+      "sourceCountry": "RU"
+    },
+    "533690": {
+      "name": "Луга",
+      "sourceCountry": "RU"
+    },
+    "534015": {
+      "name": "Лосино-Петровский",
+      "sourceCountry": "RU"
+    },
+    "534341": {
+      "name": "Ломоносов",
+      "sourceCountry": "RU"
+    },
+    "534560": {
+      "name": "Лодейное Поле",
+      "sourceCountry": "RU"
+    },
+    "534595": {
+      "name": "Лобня",
+      "sourceCountry": "RU"
+    },
+    "534701": {
+      "name": "Ливны",
+      "sourceCountry": "RU"
+    },
+    "535121": {
+      "name": "Липецк",
+      "sourceCountry": "RU"
+    },
+    "535243": {
+      "name": "Ликино-Дулево",
+      "sourceCountry": "RU"
+    },
+    "535270": {
+      "name": "Лихоборы",
+      "sourceCountry": "RU"
+    },
+    "535330": {
+      "name": "Лианозово",
+      "sourceCountry": "RU"
+    },
+    "535334": {
+      "name": "Льгов",
+      "sourceCountry": "RU"
+    },
+    "535729": {
+      "name": "Комендантский аэродром",
+      "sourceCountry": "RU"
+    },
+    "535886": {
+      "name": "Лермонтов",
+      "sourceCountry": "RU"
+    },
+    "535966": {
+      "name": "Леоново",
+      "sourceCountry": "RU"
+    },
+    "536098": {
+      "name": "Ленинские горы",
+      "sourceCountry": "RU"
+    },
+    "536156": {
+      "name": "Ленинск",
+      "sourceCountry": "RU"
+    },
+    "536162": {
+      "name": "Лениногорск",
+      "sourceCountry": "RU"
+    },
+    "536164": {
+      "name": "Царицыно",
+      "sourceCountry": "RU"
+    },
+    "536200": {
+      "name": "Ленинградская",
+      "sourceCountry": "RU"
+    },
+    "536206": {
+      "name": "Юбилейный",
+      "sourceCountry": "RU"
+    },
+    "536398": {
+      "name": "Лефортово",
+      "sourceCountry": "RU"
+    },
+    "536518": {
+      "name": "Лебедянь",
+      "sourceCountry": "RU"
+    },
+    "536625": {
+      "name": "Лазаревское",
+      "sourceCountry": "RU"
+    },
+    "537107": {
+      "name": "Лакинск",
+      "sourceCountry": "RU"
+    },
+    "537281": {
+      "name": "Лабинск",
+      "sourceCountry": "RU"
+    },
+    "537345": {
+      "name": "Дугулубгей",
+      "sourceCountry": "RU"
+    },
+    "537737": {
+      "name": "Кузнецк",
+      "sourceCountry": "RU"
+    },
+    "537832": {
+      "name": "Кузьминки",
+      "sourceCountry": "RU"
+    },
+    "538138": {
+      "name": "Кувандык",
+      "sourceCountry": "RU"
+    },
+    "538321": {
+      "name": "Кусково",
+      "sourceCountry": "RU"
+    },
+    "538340": {
+      "name": "Кушва",
+      "sourceCountry": "RU"
+    },
+    "538416": {
+      "name": "Кущёвская",
+      "sourceCountry": "RU"
+    },
+    "538442": {
+      "name": "Куса",
+      "sourceCountry": "RU"
+    },
+    "538472": {
+      "name": "Курьяново",
+      "sourceCountry": "RU"
+    },
+    "538560": {
+      "name": "Курск",
+      "sourceCountry": "RU"
+    },
+    "538601": {
+      "name": "Куровское",
+      "sourceCountry": "RU"
+    },
+    "538836": {
+      "name": "Курганинск",
+      "sourceCountry": "RU"
+    },
+    "538908": {
+      "name": "Курчатов",
+      "sourceCountry": "RU"
+    },
+    "538913": {
+      "name": "Курчалой",
+      "sourceCountry": "RU"
+    },
+    "539061": {
+      "name": "Купчино",
+      "sourceCountry": "RU"
+    },
+    "539147": {
+      "name": "Кунгур",
+      "sourceCountry": "RU"
+    },
+    "539283": {
+      "name": "Кумертау",
+      "sourceCountry": "RU"
+    },
+    "539555": {
+      "name": "Кулебаки",
+      "sourceCountry": "RU"
+    },
+    "539689": {
+      "name": "Кукмор",
+      "sourceCountry": "RU"
+    },
+    "539817": {
+      "name": "Кудымкар",
+      "sourceCountry": "RU"
+    },
+    "539839": {
+      "name": "Кудрово",
+      "sourceCountry": "RU"
+    },
+    "539907": {
+      "name": "Кудепста",
+      "sourceCountry": "RU"
+    },
+    "540030": {
+      "name": "Кубинка",
+      "sourceCountry": "RU"
+    },
+    "540103": {
+      "name": "Кстово",
+      "sourceCountry": "RU"
+    },
+    "540251": {
+      "name": "Крымск",
+      "sourceCountry": "RU"
+    },
+    "540761": {
+      "name": "Кропоткин",
+      "sourceCountry": "RU"
+    },
+    "540771": {
+      "name": "Кронштадт",
+      "sourceCountry": "RU"
+    },
+    "541404": {
+      "name": "Красный Сулин",
+      "sourceCountry": "RU"
+    },
+    "542000": {
+      "name": "Красное Село",
+      "sourceCountry": "RU"
+    },
+    "542199": {
+      "name": "Красноуфимск",
+      "sourceCountry": "RU"
+    },
+    "542327": {
+      "name": "Краснокамск",
+      "sourceCountry": "RU"
+    },
+    "542334": {
+      "name": "Красногвардейское",
+      "sourceCountry": "RU"
+    },
+    "542374": {
+      "name": "Красногорск",
+      "sourceCountry": "RU"
+    },
+    "542420": {
+      "name": "Краснодар",
+      "sourceCountry": "RU"
+    },
+    "542461": {
+      "name": "Полтавская",
+      "sourceCountry": "RU"
+    },
+    "542463": {
+      "name": "Красноармейск",
+      "sourceCountry": "RU"
+    },
+    "542464": {
+      "name": "Красноармейск",
+      "sourceCountry": "RU"
+    },
+    "543018": {
+      "name": "Козьмодемьянск",
+      "sourceCountry": "RU"
+    },
+    "543254": {
+      "name": "Кожухово",
+      "sourceCountry": "RU"
+    },
+    "543344": {
+      "name": "Козеево",
+      "sourceCountry": "RU"
+    },
+    "543348": {
+      "name": "Козельск",
+      "sourceCountry": "RU"
+    },
+    "543436": {
+      "name": "Ковылкино",
+      "sourceCountry": "RU"
+    },
+    "543460": {
+      "name": "Ковров",
+      "sourceCountry": "RU"
+    },
+    "543508": {
+      "name": "Ковдор",
+      "sourceCountry": "RU"
+    },
+    "543605": {
+      "name": "Котовск",
+      "sourceCountry": "RU"
+    },
+    "543633": {
+      "name": "Котово",
+      "sourceCountry": "RU"
+    },
+    "543704": {
+      "name": "Котлас",
+      "sourceCountry": "RU"
+    },
+    "543728": {
+      "name": "Котельниково",
+      "sourceCountry": "RU"
+    },
+    "543731": {
+      "name": "Котельники",
+      "sourceCountry": "RU"
+    },
+    "543737": {
+      "name": "Котельнич",
+      "sourceCountry": "RU"
+    },
+    "543878": {
+      "name": "Кострома",
+      "sourceCountry": "RU"
+    },
+    "543899": {
+      "name": "Костомукша",
+      "sourceCountry": "RU"
+    },
+    "544293": {
+      "name": "Косая Гора",
+      "sourceCountry": "RU"
+    },
+    "544370": {
+      "name": "Коряжма",
+      "sourceCountry": "RU"
+    },
+    "544896": {
+      "name": "Кореновск",
+      "sourceCountry": "RU"
+    },
+    "545277": {
+      "name": "Константиновск",
+      "sourceCountry": "RU"
+    },
+    "545626": {
+      "name": "Кондопога",
+      "sourceCountry": "RU"
+    },
+    "545673": {
+      "name": "Конаково",
+      "sourceCountry": "RU"
+    },
+    "545788": {
+      "name": "Коммунар",
+      "sourceCountry": "RU"
+    },
+    "546105": {
+      "name": "Колпино",
+      "sourceCountry": "RU"
+    },
+    "546225": {
+      "name": "Коломяги",
+      "sourceCountry": "RU"
+    },
+    "546230": {
+      "name": "Коломна",
+      "sourceCountry": "RU"
+    },
+    "546244": {
+      "name": "Коломенское",
+      "sourceCountry": "RU"
+    },
+    "546521": {
+      "name": "Кольчугино",
+      "sourceCountry": "RU"
+    },
+    "546672": {
+      "name": "Кохма",
+      "sourceCountry": "RU"
+    },
+    "547475": {
+      "name": "Клинцы",
+      "sourceCountry": "RU"
+    },
+    "547523": {
+      "name": "Клин",
+      "sourceCountry": "RU"
+    },
+    "547560": {
+      "name": "Климовск",
+      "sourceCountry": "RU"
+    },
+    "547840": {
+      "name": "Кизляр",
+      "sourceCountry": "RU"
+    },
+    "547849": {
+      "name": "Кизилюрт",
+      "sourceCountry": "RU"
+    },
+    "547875": {
+      "name": "Кизел",
+      "sourceCountry": "RU"
+    },
+    "548114": {
+      "name": "Кисловодск",
+      "sourceCountry": "RU"
+    },
+    "548278": {
+      "name": "Киржач",
+      "sourceCountry": "RU"
+    },
+    "548330": {
+      "name": "Кирсанов",
+      "sourceCountry": "RU"
+    },
+    "548391": {
+      "name": "Кировск",
+      "sourceCountry": "RU"
+    },
+    "548392": {
+      "name": "Кировск",
+      "sourceCountry": "RU"
+    },
+    "548395": {
+      "name": "Кирово-Чепецк",
+      "sourceCountry": "RU"
+    },
+    "548408": {
+      "name": "Киров",
+      "sourceCountry": "RU"
+    },
+    "548410": {
+      "name": "Киров",
+      "sourceCountry": "RU"
+    },
+    "548442": {
+      "name": "Кириши",
+      "sourceCountry": "RU"
+    },
+    "548602": {
+      "name": "Кингисепп",
+      "sourceCountry": "RU"
+    },
+    "548605": {
+      "name": "Кинешма",
+      "sourceCountry": "RU"
+    },
+    "548622": {
+      "name": "Кинель-Черкассы",
+      "sourceCountry": "RU"
+    },
+    "548625": {
+      "name": "Кинель",
+      "sourceCountry": "RU"
+    },
+    "548652": {
+      "name": "Кимры",
+      "sourceCountry": "RU"
+    },
+    "548658": {
+      "name": "Кимовск",
+      "sourceCountry": "RU"
+    },
+    "549373": {
+      "name": "Хотьково",
+      "sourceCountry": "RU"
+    },
+    "549424": {
+      "name": "Хоста",
+      "sourceCountry": "RU"
+    },
+    "549741": {
+      "name": "Холмская",
+      "sourceCountry": "RU"
+    },
+    "550280": {
+      "name": "Химки",
+      "sourceCountry": "RU"
+    },
+    "550478": {
+      "name": "Хасавюрт",
+      "sourceCountry": "RU"
+    },
+    "550671": {
+      "name": "Харабали",
+      "sourceCountry": "RU"
+    },
+    "550846": {
+      "name": "Хадыженск",
+      "sourceCountry": "RU"
+    },
+    "551487": {
+      "name": "Казань",
+      "sourceCountry": "RU"
+    },
+    "551794": {
+      "name": "Катав-Ивановск",
+      "sourceCountry": "RU"
+    },
+    "551835": {
+      "name": "Кастанаево",
+      "sourceCountry": "RU"
+    },
+    "551847": {
+      "name": "Каспийск",
+      "sourceCountry": "RU"
+    },
+    "551891": {
+      "name": "Касимов",
+      "sourceCountry": "RU"
+    },
+    "551964": {
+      "name": "Кашира",
+      "sourceCountry": "RU"
+    },
+    "551986": {
+      "name": "Кашин",
+      "sourceCountry": "RU"
+    },
+    "552920": {
+      "name": "Карачев",
+      "sourceCountry": "RU"
+    },
+    "552924": {
+      "name": "Карачаевск",
+      "sourceCountry": "RU"
+    },
+    "552951": {
+      "name": "Карабулак",
+      "sourceCountry": "RU"
+    },
+    "552977": {
+      "name": "Карабаново",
+      "sourceCountry": "RU"
+    },
+    "553034": {
+      "name": "Капотня",
+      "sourceCountry": "RU"
+    },
+    "553092": {
+      "name": "Кантышево",
+      "sourceCountry": "RU"
+    },
+    "553152": {
+      "name": "Каневская",
+      "sourceCountry": "RU"
+    },
+    "553190": {
+      "name": "Кандалакша",
+      "sourceCountry": "RU"
+    },
+    "553216": {
+      "name": "Канаш",
+      "sourceCountry": "RU"
+    },
+    "553248": {
+      "name": "Камызяк",
+      "sourceCountry": "RU"
+    },
+    "553287": {
+      "name": "Камышин",
+      "sourceCountry": "RU"
+    },
+    "553399": {
+      "name": "Каменск-Шахтинский",
+      "sourceCountry": "RU"
+    },
+    "553725": {
+      "name": "Каменка",
+      "sourceCountry": "RU"
+    },
+    "553915": {
+      "name": "Калуга",
+      "sourceCountry": "RU"
+    },
+    "554199": {
+      "name": "Калининск",
+      "sourceCountry": "RU"
+    },
+    "554233": {
+      "name": "Королёв",
+      "sourceCountry": "RU"
+    },
+    "554234": {
+      "name": "Калининград",
+      "sourceCountry": "RU"
+    },
+    "554397": {
+      "name": "Калач-на-Дону",
+      "sourceCountry": "RU"
+    },
+    "554410": {
+      "name": "Калач",
+      "sourceCountry": "RU"
+    },
+    "554599": {
+      "name": "Качканар",
+      "sourceCountry": "RU"
+    },
+    "554679": {
+      "name": "Кабаново",
+      "sourceCountry": "RU"
+    },
+    "554770": {
+      "name": "Изобильный",
+      "sourceCountry": "RU"
+    },
+    "554787": {
+      "name": "Измайлово",
+      "sourceCountry": "RU"
+    },
+    "554840": {
+      "name": "Ижевск",
+      "sourceCountry": "RU"
+    },
+    "554894": {
+      "name": "Избербаш",
+      "sourceCountry": "RU"
+    },
+    "555111": {
+      "name": "Ивантеевка",
+      "sourceCountry": "RU"
+    },
+    "555129": {
+      "name": "Ивановское",
+      "sourceCountry": "RU"
+    },
+    "555312": {
+      "name": "Иваново",
+      "sourceCountry": "RU"
+    },
+    "555746": {
+      "name": "Истра",
+      "sourceCountry": "RU"
+    },
+    "555980": {
+      "name": "Ишимбай",
+      "sourceCountry": "RU"
+    },
+    "556230": {
+      "name": "Ипатово",
+      "sourceCountry": "RU"
+    },
+    "556283": {
+      "name": "Инза",
+      "sourceCountry": "RU"
+    },
+    "556320": {
+      "name": "Иноземцево",
+      "sourceCountry": "RU"
+    },
+    "556951": {
+      "name": "Ильский",
+      "sourceCountry": "RU"
+    },
+    "557469": {
+      "name": "Игра",
+      "sourceCountry": "RU"
+    },
+    "557775": {
+      "name": "Гусь-Хрустальный",
+      "sourceCountry": "RU"
+    },
+    "557882": {
+      "name": "Гусев",
+      "sourceCountry": "RU"
+    },
+    "558066": {
+      "name": "Гулькевичи",
+      "sourceCountry": "RU"
+    },
+    "558082": {
+      "name": "Гуково",
+      "sourceCountry": "RU"
+    },
+    "558118": {
+      "name": "Гудермес",
+      "sourceCountry": "RU"
+    },
+    "558146": {
+      "name": "Губкин",
+      "sourceCountry": "RU"
+    },
+    "558209": {
+      "name": "Губаха",
+      "sourceCountry": "RU"
+    },
+    "558236": {
+      "name": "Грязовец",
+      "sourceCountry": "RU"
+    },
+    "558312": {
+      "name": "Грязи",
+      "sourceCountry": "RU"
+    },
+    "558418": {
+      "name": "Грозный",
+      "sourceCountry": "RU"
+    },
+    "558799": {
+      "name": "Грибановский",
+      "sourceCountry": "RU"
+    },
+    "559029": {
+      "name": "Гражданка",
+      "sourceCountry": "RU"
+    },
+    "559317": {
+      "name": "Горячий Ключ",
+      "sourceCountry": "RU"
+    },
+    "559320": {
+      "name": "Горячеводский",
+      "sourceCountry": "RU"
+    },
+    "559654": {
+      "name": "Городище",
+      "sourceCountry": "RU"
+    },
+    "559678": {
+      "name": "Городец",
+      "sourceCountry": "RU"
+    },
+    "560142": {
+      "name": "Горелово",
+      "sourceCountry": "RU"
+    },
+    "560465": {
+      "name": "Гольяново",
+      "sourceCountry": "RU"
+    },
+    "560756": {
+      "name": "Голицыно",
+      "sourceCountry": "RU"
+    },
+    "561347": {
+      "name": "Глазов",
+      "sourceCountry": "RU"
+    },
+    "561515": {
+      "name": "Гиагинская",
+      "sourceCountry": "RU"
+    },
+    "561627": {
+      "name": "Георгиевск",
+      "sourceCountry": "RU"
+    },
+    "561667": {
+      "name": "Геленджик",
+      "sourceCountry": "RU"
+    },
+    "561731": {
+      "name": "Гай",
+      "sourceCountry": "RU"
+    },
+    "561762": {
+      "name": "Гаврилов-Ям",
+      "sourceCountry": "RU"
+    },
+    "561887": {
+      "name": "Гатчина",
+      "sourceCountry": "RU"
+    },
+    "562161": {
+      "name": "Галич",
+      "sourceCountry": "RU"
+    },
+    "562237": {
+      "name": "Гагарин",
+      "sourceCountry": "RU"
+    },
+    "562309": {
+      "name": "Фурманов",
+      "sourceCountry": "RU"
+    },
+    "562319": {
+      "name": "Фрязино",
+      "sourceCountry": "RU"
+    },
+    "562321": {
+      "name": "Фрязево",
+      "sourceCountry": "RU"
+    },
+    "562389": {
+      "name": "Фролово",
+      "sourceCountry": "RU"
+    },
+    "562820": {
+      "name": "Фили",
+      "sourceCountry": "RU"
+    },
+    "563379": {
+      "name": "Эжва",
+      "sourceCountry": "RU"
+    },
+    "563464": {
+      "name": "Энгельс",
+      "sourceCountry": "RU"
+    },
+    "563472": {
+      "name": "Энем",
+      "sourceCountry": "RU"
+    },
+    "563514": {
+      "name": "Элиста",
+      "sourceCountry": "RU"
+    },
+    "563522": {
+      "name": "Электроугли",
+      "sourceCountry": "RU"
+    },
+    "563523": {
+      "name": "Электросталь",
+      "sourceCountry": "RU"
+    },
+    "563524": {
+      "name": "Электрогорск",
+      "sourceCountry": "RU"
+    },
+    "563551": {
+      "name": "Экажево",
+      "sourceCountry": "RU"
+    },
+    "563705": {
+      "name": "Дзержинский",
+      "sourceCountry": "RU"
+    },
+    "563708": {
+      "name": "Дзержинск",
+      "sourceCountry": "RU"
+    },
+    "563719": {
+      "name": "Дюртюли",
+      "sourceCountry": "RU"
+    },
+    "563822": {
+      "name": "Дятьково",
+      "sourceCountry": "RU"
+    },
+    "564654": {
+      "name": "Дубовка",
+      "sourceCountry": "RU"
+    },
+    "564719": {
+      "name": "Дубна",
+      "sourceCountry": "RU"
+    },
+    "565197": {
+      "name": "Дорогомилово",
+      "sourceCountry": "RU"
+    },
+    "565289": {
+      "name": "Донское",
+      "sourceCountry": "RU"
+    },
+    "565290": {
+      "name": "Донской",
+      "sourceCountry": "RU"
+    },
+    "565348": {
+      "name": "Донецк",
+      "sourceCountry": "RU"
+    },
+    "565381": {
+      "name": "Домодедово",
+      "sourceCountry": "RU"
+    },
+    "565614": {
+      "name": "Долгопрудный",
+      "sourceCountry": "RU"
+    },
+    "565778": {
+      "name": "Добрянка",
+      "sourceCountry": "RU"
+    },
+    "565955": {
+      "name": "Дмитров",
+      "sourceCountry": "RU"
+    },
+    "566155": {
+      "name": "Дивное",
+      "sourceCountry": "RU"
+    },
+    "566181": {
+      "name": "Динская",
+      "sourceCountry": "RU"
+    },
+    "566199": {
+      "name": "Димитровград",
+      "sourceCountry": "RU"
+    },
+    "566384": {
+      "name": "Десногорск",
+      "sourceCountry": "RU"
+    },
+    "566532": {
+      "name": "Дербент",
+      "sourceCountry": "RU"
+    },
+    "566854": {
+      "name": "Дедовск",
+      "sourceCountry": "RU"
+    },
+    "566976": {
+      "name": "Давыдково",
+      "sourceCountry": "RU"
+    },
+    "567006": {
+      "name": "Давлеканово",
+      "sourceCountry": "RU"
+    },
+    "567109": {
+      "name": "Данков",
+      "sourceCountry": "RU"
+    },
+    "567183": {
+      "name": "Данилов",
+      "sourceCountry": "RU"
+    },
+    "567290": {
+      "name": "Дагестанские Огни",
+      "sourceCountry": "RU"
+    },
+    "567311": {
+      "name": "Дачное",
+      "sourceCountry": "RU"
+    },
+    "567434": {
+      "name": "Чусовой",
+      "sourceCountry": "RU"
+    },
+    "567774": {
+      "name": "Чудово",
+      "sourceCountry": "RU"
+    },
+    "567990": {
+      "name": "Чистополь",
+      "sourceCountry": "RU"
+    },
+    "568012": {
+      "name": "Чишмы",
+      "sourceCountry": "RU"
+    },
+    "568587": {
+      "name": "Чернянка",
+      "sourceCountry": "RU"
+    },
+    "568595": {
+      "name": "Черняховск",
+      "sourceCountry": "RU"
+    },
+    "568608": {
+      "name": "Чернушка",
+      "sourceCountry": "RU"
+    },
+    "568808": {
+      "name": "Черноголовка",
+      "sourceCountry": "RU"
+    },
+    "569154": {
+      "name": "Черкесск",
+      "sourceCountry": "RU"
+    },
+    "569223": {
+      "name": "Череповец",
+      "sourceCountry": "RU"
+    },
+    "569273": {
+      "name": "Черёмушки",
+      "sourceCountry": "RU"
+    },
+    "569591": {
+      "name": "Чехов",
+      "sourceCountry": "RU"
+    },
+    "569696": {
+      "name": "Чебоксары",
+      "sourceCountry": "RU"
+    },
+    "569742": {
+      "name": "Чайковский",
+      "sourceCountry": "RU"
+    },
+    "569955": {
+      "name": "Чапаевск",
+      "sourceCountry": "RU"
+    },
+    "570427": {
+      "name": "Бузулук",
+      "sourceCountry": "RU"
+    },
+    "570479": {
+      "name": "Буйнакск",
+      "sourceCountry": "RU"
+    },
+    "570508": {
+      "name": "Буй",
+      "sourceCountry": "RU"
+    },
+    "570563": {
+      "name": "Бутурлиновка",
+      "sourceCountry": "RU"
+    },
+    "571155": {
+      "name": "Буинск",
+      "sourceCountry": "RU"
+    },
+    "571159": {
+      "name": "Бугуруслан",
+      "sourceCountry": "RU"
+    },
+    "571170": {
+      "name": "Бугульма",
+      "sourceCountry": "RU"
+    },
+    "571306": {
+      "name": "Будённовск",
+      "sourceCountry": "RU"
+    },
+    "571420": {
+      "name": "Брюховецкая",
+      "sourceCountry": "RU"
+    },
+    "571476": {
+      "name": "Брянск",
+      "sourceCountry": "RU"
+    },
+    "571557": {
+      "name": "Бронницы",
+      "sourceCountry": "RU"
+    },
+    "571741": {
+      "name": "Братеево",
+      "sourceCountry": "RU"
+    },
+    "572154": {
+      "name": "Боровичи",
+      "sourceCountry": "RU"
+    },
+    "572525": {
+      "name": "Борисоглебск",
+      "sourceCountry": "RU"
+    },
+    "572665": {
+      "name": "Бор",
+      "sourceCountry": "RU"
+    },
+    "574675": {
+      "name": "Большая Сетунь",
+      "sourceCountry": "RU"
+    },
+    "575349": {
+      "name": "Бологое",
+      "sourceCountry": "RU"
+    },
+    "575410": {
+      "name": "Бокситогорск",
+      "sourceCountry": "RU"
+    },
+    "575457": {
+      "name": "Богучар",
+      "sourceCountry": "RU"
+    },
+    "575505": {
+      "name": "Богородское",
+      "sourceCountry": "RU"
+    },
+    "575560": {
+      "name": "Богородск",
+      "sourceCountry": "RU"
+    },
+    "575591": {
+      "name": "Богородицк",
+      "sourceCountry": "RU"
+    },
+    "575948": {
+      "name": "Бобров",
+      "sourceCountry": "RU"
+    },
+    "576116": {
+      "name": "Благовещенск",
+      "sourceCountry": "RU"
+    },
+    "576172": {
+      "name": "Благодарный",
+      "sourceCountry": "RU"
+    },
+    "576279": {
+      "name": "Бирюлёво",
+      "sourceCountry": "RU"
+    },
+    "576317": {
+      "name": "Бирск",
+      "sourceCountry": "RU"
+    },
+    "576432": {
+      "name": "Бибирево",
+      "sourceCountry": "RU"
+    },
+    "576566": {
+      "name": "Бежецк",
+      "sourceCountry": "RU"
+    },
+    "576590": {
+      "name": "Безенчук",
+      "sourceCountry": "RU"
+    },
+    "576697": {
+      "name": "Беслан",
+      "sourceCountry": "RU"
+    },
+    "577206": {
+      "name": "Березники",
+      "sourceCountry": "RU"
+    },
+    "577881": {
+      "name": "Белорецк",
+      "sourceCountry": "RU"
+    },
+    "577893": {
+      "name": "Белореченск",
+      "sourceCountry": "RU"
+    },
+    "577901": {
+      "name": "Белоозёрский",
+      "sourceCountry": "RU"
+    },
+    "578072": {
+      "name": "Белгород",
+      "sourceCountry": "RU"
+    },
+    "578091": {
+      "name": "Белёв",
+      "sourceCountry": "RU"
+    },
+    "578120": {
+      "name": "Белебей",
+      "sourceCountry": "RU"
+    },
+    "578155": {
+      "name": "Белая Калитва",
+      "sourceCountry": "RU"
+    },
+    "578169": {
+      "name": "Белая Глина",
+      "sourceCountry": "RU"
+    },
+    "578534": {
+      "name": "Баймак",
+      "sourceCountry": "RU"
+    },
+    "578638": {
+      "name": "Бавлы",
+      "sourceCountry": "RU"
+    },
+    "578740": {
+      "name": "Батайск",
+      "sourceCountry": "RU"
+    },
+    "578931": {
+      "name": "Барыш",
+      "sourceCountry": "RU"
+    },
+    "579432": {
+      "name": "Балезино",
+      "sourceCountry": "RU"
+    },
+    "579460": {
+      "name": "Балашов",
+      "sourceCountry": "RU"
+    },
+    "579464": {
+      "name": "Балашиха",
+      "sourceCountry": "RU"
+    },
+    "579492": {
+      "name": "Балаково",
+      "sourceCountry": "RU"
+    },
+    "579514": {
+      "name": "Балахна",
+      "sourceCountry": "RU"
+    },
+    "579529": {
+      "name": "Балабаново",
+      "sourceCountry": "RU"
+    },
+    "579574": {
+      "name": "Баксан",
+      "sourceCountry": "RU"
+    },
+    "579738": {
+      "name": "Бакал",
+      "sourceCountry": "RU"
+    },
+    "579771": {
+      "name": "Багаевская",
+      "sourceCountry": "RU"
+    },
+    "579870": {
+      "name": "Бабушкин",
+      "sourceCountry": "RU"
+    },
+    "580054": {
+      "name": "Азов",
+      "sourceCountry": "RU"
+    },
+    "580062": {
+      "name": "Азнакаево",
+      "sourceCountry": "RU"
+    },
+    "580218": {
+      "name": "Автуры",
+      "sourceCountry": "RU"
+    },
+    "580222": {
+      "name": "Автово",
+      "sourceCountry": "RU"
+    },
+    "580420": {
+      "name": "Аткарск",
+      "sourceCountry": "RU"
+    },
+    "580497": {
+      "name": "Астрахань",
+      "sourceCountry": "RU"
+    },
+    "580660": {
+      "name": "Аша",
+      "sourceCountry": "RU"
+    },
+    "580716": {
+      "name": "Арзгир",
+      "sourceCountry": "RU"
+    },
+    "580724": {
+      "name": "Арзамас",
+      "sourceCountry": "RU"
+    },
+    "580850": {
+      "name": "Арск",
+      "sourceCountry": "RU"
+    },
+    "580922": {
+      "name": "Армавир",
+      "sourceCountry": "RU"
+    },
+    "581049": {
+      "name": "Архангельск",
+      "sourceCountry": "RU"
+    },
+    "581126": {
+      "name": "Аргун",
+      "sourceCountry": "RU"
+    },
+    "581179": {
+      "name": "Ардон",
+      "sourceCountry": "RU"
+    },
+    "581313": {
+      "name": "Апшеронск",
+      "sourceCountry": "RU"
+    },
+    "581321": {
+      "name": "Апрелевка",
+      "sourceCountry": "RU"
+    },
+    "581357": {
+      "name": "Апатиты",
+      "sourceCountry": "RU"
+    },
+    "581671": {
+      "name": "Анна",
+      "sourceCountry": "RU"
+    },
+    "581928": {
+      "name": "Андреевское",
+      "sourceCountry": "RU"
+    },
+    "582182": {
+      "name": "Анапа",
+      "sourceCountry": "RU"
+    },
+    "582266": {
+      "name": "Аминьево",
+      "sourceCountry": "RU"
+    },
+    "582432": {
+      "name": "Альметьевск",
+      "sourceCountry": "RU"
+    },
+    "582750": {
+      "name": "Алексин",
+      "sourceCountry": "RU"
+    },
+    "582846": {
+      "name": "Алексеевка",
+      "sourceCountry": "RU"
+    },
+    "582956": {
+      "name": "Алексе́евка",
+      "sourceCountry": "RU"
+    },
+    "582993": {
+      "name": "Александровское",
+      "sourceCountry": "RU"
+    },
+    "583041": {
+      "name": "Александровск",
+      "sourceCountry": "RU"
+    },
+    "583350": {
+      "name": "Александров",
+      "sourceCountry": "RU"
+    },
+    "583437": {
+      "name": "Алатырь",
+      "sourceCountry": "RU"
+    },
+    "583673": {
+      "name": "Аксай",
+      "sourceCountry": "RU"
+    },
+    "583785": {
+      "name": "Ахтырский",
+      "sourceCountry": "RU"
+    },
+    "583798": {
+      "name": "Ахтубинск",
+      "sourceCountry": "RU"
+    },
+    "583983": {
+      "name": "Агрыз",
+      "sourceCountry": "RU"
+    },
+    "584126": {
+      "name": "Афипский",
+      "sourceCountry": "RU"
+    },
+    "584243": {
+      "name": "Адлер",
+      "sourceCountry": "RU"
+    },
+    "584298": {
+      "name": "Ачхой-Мартан",
+      "sourceCountry": "RU"
+    },
+    "584441": {
+      "name": "Абинск",
+      "sourceCountry": "RU"
+    },
+    "584471": {
+      "name": "Абдулино",
+      "sourceCountry": "RU"
+    },
+    "611182": {
+      "name": "Васильево",
+      "sourceCountry": "RU"
+    },
+    "695019": {
+      "name": "Рыльск",
+      "sourceCountry": "RU"
+    },
+    "797781": {
+      "name": "Нефтекумск",
+      "sourceCountry": "RU"
+    },
+    "802078": {
+      "name": "Алагир",
+      "sourceCountry": "RU"
+    },
+    "802714": {
+      "name": "Персиановский",
+      "sourceCountry": "RU"
+    },
+    "819552": {
+      "name": "Аннино",
+      "sourceCountry": "RU"
+    },
+    "819740": {
+      "name": "Дрожжино",
+      "sourceCountry": "RU"
+    },
+    "823674": {
+      "name": "Дагомыс",
+      "sourceCountry": "RU"
+    },
+    "824988": {
+      "name": "Город Шебекино",
+      "sourceCountry": "RU"
+    },
+    "827329": {
+      "name": "Павлово",
+      "sourceCountry": "RU"
+    },
+    "828055": {
+      "name": "Белиджи",
+      "sourceCountry": "RU"
+    },
+    "830844": {
+      "name": "Трёхгорный",
+      "sourceCountry": "RU"
+    },
+    "831129": {
+      "name": "Мирный",
+      "sourceCountry": "RU"
+    },
+    "831130": {
+      "name": "Знаменск",
+      "sourceCountry": "RU"
+    },
+    "831165": {
+      "name": "Заречный",
+      "sourceCountry": "RU"
+    },
+    "841006": {
+      "name": "Кочубеевское",
+      "sourceCountry": "RU"
+    },
+    "857689": {
+      "name": "Внуково",
+      "sourceCountry": "RU"
+    },
+    "857690": {
+      "name": "Московский",
+      "sourceCountry": "RU"
+    },
+    "863061": {
+      "name": "Усинск",
+      "sourceCountry": "RU"
+    },
+    "873901": {
+      "name": "Обухово",
+      "sourceCountry": "RU"
+    },
+    "874045": {
+      "name": "Старый Малгобек",
+      "sourceCountry": "RU"
+    },
+    "1485439": {
+      "name": "Заринск",
+      "sourceCountry": "RU"
+    },
+    "1485445": {
+      "name": "Заречный",
+      "sourceCountry": "RU"
+    },
+    "1485627": {
+      "name": "Южный",
+      "sourceCountry": "RU"
+    },
+    "1485634": {
+      "name": "Южноуральск",
+      "sourceCountry": "RU"
+    },
+    "1485724": {
+      "name": "Юрга",
+      "sourceCountry": "RU"
+    },
+    "1485997": {
+      "name": "Енисейск",
+      "sourceCountry": "RU"
+    },
+    "1486039": {
+      "name": "Еманжелинск",
+      "sourceCountry": "RU"
+    },
+    "1486209": {
+      "name": "Екатеринбург",
+      "sourceCountry": "RU"
+    },
+    "1486298": {
+      "name": "Яшкино",
+      "sourceCountry": "RU"
+    },
+    "1486340": {
+      "name": "Яровое",
+      "sourceCountry": "RU"
+    },
+    "1486468": {
+      "name": "Ялуторовск",
+      "sourceCountry": "RU"
+    },
+    "1486910": {
+      "name": "Воркута",
+      "sourceCountry": "RU"
+    },
+    "1486913": {
+      "name": "Воргашор",
+      "sourceCountry": "RU"
+    },
+    "1487277": {
+      "name": "Верхняя Салда",
+      "sourceCountry": "RU"
+    },
+    "1487281": {
+      "name": "Верхняя Пышма",
+      "sourceCountry": "RU"
+    },
+    "1487394": {
+      "name": "Верхний Уфалей",
+      "sourceCountry": "RU"
+    },
+    "1487882": {
+      "name": "Ужур",
+      "sourceCountry": "RU"
+    },
+    "1488253": {
+      "name": "Зеленогорск",
+      "sourceCountry": "RU"
+    },
+    "1488429": {
+      "name": "Урай",
+      "sourceCountry": "RU"
+    },
+    "1488754": {
+      "name": "Тюмень",
+      "sourceCountry": "RU"
+    },
+    "1488933": {
+      "name": "Туринск",
+      "sourceCountry": "RU"
+    },
+    "1489246": {
+      "name": "Троицк",
+      "sourceCountry": "RU"
+    },
+    "1489394": {
+      "name": "Топки",
+      "sourceCountry": "RU"
+    },
+    "1489425": {
+      "name": "Томск",
+      "sourceCountry": "RU"
+    },
+    "1489508": {
+      "name": "Тогучин",
+      "sourceCountry": "RU"
+    },
+    "1489530": {
+      "name": "Тобольск",
+      "sourceCountry": "RU"
+    },
+    "1489870": {
+      "name": "Тайшет",
+      "sourceCountry": "RU"
+    },
+    "1489907": {
+      "name": "Тайга",
+      "sourceCountry": "RU"
+    },
+    "1489962": {
+      "name": "Тавда",
+      "sourceCountry": "RU"
+    },
+    "1490003": {
+      "name": "Татарск",
+      "sourceCountry": "RU"
+    },
+    "1490042": {
+      "name": "Таштагол",
+      "sourceCountry": "RU"
+    },
+    "1490085": {
+      "name": "Тарко-Сале",
+      "sourceCountry": "RU"
+    },
+    "1490140": {
+      "name": "Тара",
+      "sourceCountry": "RU"
+    },
+    "1490256": {
+      "name": "Талнах",
+      "sourceCountry": "RU"
+    },
+    "1490266": {
+      "name": "Тальменка",
+      "sourceCountry": "RU"
+    },
+    "1490277": {
+      "name": "Талица",
+      "sourceCountry": "RU"
+    },
+    "1490281": {
+      "name": "Талица",
+      "sourceCountry": "RU"
+    },
+    "1490402": {
+      "name": "Сысерть",
+      "sourceCountry": "RU"
+    },
+    "1490551": {
+      "name": "Сузун",
+      "sourceCountry": "RU"
+    },
+    "1490624": {
+      "name": "Сургут",
+      "sourceCountry": "RU"
+    },
+    "1490686": {
+      "name": "Сухой Лог",
+      "sourceCountry": "RU"
+    },
+    "1490796": {
+      "name": "Стрежевой",
+      "sourceCountry": "RU"
+    },
+    "1491159": {
+      "name": "Среднеуральск",
+      "sourceCountry": "RU"
+    },
+    "1491230": {
+      "name": "Советский",
+      "sourceCountry": "RU"
+    },
+    "1491291": {
+      "name": "Сосновоборск",
+      "sourceCountry": "RU"
+    },
+    "1491706": {
+      "name": "Славгород",
+      "sourceCountry": "RU"
+    },
+    "1491953": {
+      "name": "Шушенское",
+      "sourceCountry": "RU"
+    },
+    "1491999": {
+      "name": "Шумиха",
+      "sourceCountry": "RU"
+    },
+    "1492401": {
+      "name": "Шарыпово",
+      "sourceCountry": "RU"
+    },
+    "1492517": {
+      "name": "Шадринск",
+      "sourceCountry": "RU"
+    },
+    "1492893": {
+      "name": "Саяногорск",
+      "sourceCountry": "RU"
+    },
+    "1493197": {
+      "name": "Салехард",
+      "sourceCountry": "RU"
+    },
+    "1493467": {
+      "name": "Рубцовск",
+      "sourceCountry": "RU"
+    },
+    "1493648": {
+      "name": "Реж",
+      "sourceCountry": "RU"
+    },
+    "1493687": {
+      "name": "Рефтинский",
+      "sourceCountry": "RU"
+    },
+    "1494091": {
+      "name": "Промышленная",
+      "sourceCountry": "RU"
+    },
+    "1494114": {
+      "name": "Прокопьевск",
+      "sourceCountry": "RU"
+    },
+    "1494276": {
+      "name": "Пойковский",
+      "sourceCountry": "RU"
+    },
+    "1494456": {
+      "name": "Полысаево",
+      "sourceCountry": "RU"
+    },
+    "1494573": {
+      "name": "Полевской",
+      "sourceCountry": "RU"
+    },
+    "1494907": {
+      "name": "Пласт",
+      "sourceCountry": "RU"
+    },
+    "1495974": {
+      "name": "Осинники",
+      "sourceCountry": "RU"
+    },
+    "1496153": {
+      "name": "Омск",
+      "sourceCountry": "RU"
+    },
+    "1496421": {
+      "name": "Обь",
+      "sourceCountry": "RU"
+    },
+    "1496476": {
+      "name": "Нягань",
+      "sourceCountry": "RU"
+    },
+    "1496503": {
+      "name": "Ноябрьск",
+      "sourceCountry": "RU"
+    },
+    "1496511": {
+      "name": "Новый Уренгой",
+      "sourceCountry": "RU"
+    },
+    "1496739": {
+      "name": "Новосиликатный",
+      "sourceCountry": "RU"
+    },
+    "1496747": {
+      "name": "Новосибирск",
+      "sourceCountry": "RU"
+    },
+    "1496990": {
+      "name": "Новокузнецк",
+      "sourceCountry": "RU"
+    },
+    "1497173": {
+      "name": "Новоалтайск",
+      "sourceCountry": "RU"
+    },
+    "1497337": {
+      "name": "Норильск",
+      "sourceCountry": "RU"
+    },
+    "1497393": {
+      "name": "Нижняя Салда",
+      "sourceCountry": "RU"
+    },
+    "1497543": {
+      "name": "Нижневартовск",
+      "sourceCountry": "RU"
+    },
+    "1497549": {
+      "name": "Нижнеудинск",
+      "sourceCountry": "RU"
+    },
+    "1497795": {
+      "name": "Невьянск",
+      "sourceCountry": "RU"
+    },
+    "1497917": {
+      "name": "Нефтеюганск",
+      "sourceCountry": "RU"
+    },
+    "1497951": {
+      "name": "Назарово",
+      "sourceCountry": "RU"
+    },
+    "1498087": {
+      "name": "Надым",
+      "sourceCountry": "RU"
+    },
+    "1498129": {
+      "name": "Мыски",
+      "sourceCountry": "RU"
+    },
+    "1498693": {
+      "name": "Минусинск",
+      "sourceCountry": "RU"
+    },
+    "1498894": {
+      "name": "Миасс",
+      "sourceCountry": "RU"
+    },
+    "1498920": {
+      "name": "Междуреченск",
+      "sourceCountry": "RU"
+    },
+    "1499163": {
+      "name": "Майма",
+      "sourceCountry": "RU"
+    },
+    "1499350": {
+      "name": "Мариинск",
+      "sourceCountry": "RU"
+    },
+    "1500532": {
+      "name": "Линёво",
+      "sourceCountry": "RU"
+    },
+    "1500607": {
+      "name": "Лесосибирск",
+      "sourceCountry": "RU"
+    },
+    "1500665": {
+      "name": "Ленинск-Кузнецкий",
+      "sourceCountry": "RU"
+    },
+    "1500933": {
+      "name": "Лабытнанги",
+      "sourceCountry": "RU"
+    },
+    "1500973": {
+      "name": "Кызыл",
+      "sourceCountry": "RU"
+    },
+    "1500997": {
+      "name": "Кыштым",
+      "sourceCountry": "RU"
+    },
+    "1501141": {
+      "name": "Куйбышев",
+      "sourceCountry": "RU"
+    },
+    "1501255": {
+      "name": "Куртамыш",
+      "sourceCountry": "RU"
+    },
+    "1501321": {
+      "name": "Курган",
+      "sourceCountry": "RU"
+    },
+    "1501365": {
+      "name": "Купино",
+      "sourceCountry": "RU"
+    },
+    "1501460": {
+      "name": "Кулунда",
+      "sourceCountry": "RU"
+    },
+    "1502026": {
+      "name": "Красноярск",
+      "sourceCountry": "RU"
+    },
+    "1502060": {
+      "name": "Красноуральск",
+      "sourceCountry": "RU"
+    },
+    "1502061": {
+      "name": "Краснотурьинск",
+      "sourceCountry": "RU"
+    },
+    "1502091": {
+      "name": "Краснообск",
+      "sourceCountry": "RU"
+    },
+    "1502536": {
+      "name": "Коркино",
+      "sourceCountry": "RU"
+    },
+    "1502603": {
+      "name": "Копейск",
+      "sourceCountry": "RU"
+    },
+    "1502725": {
+      "name": "Югорск",
+      "sourceCountry": "RU"
+    },
+    "1502862": {
+      "name": "Колпашево",
+      "sourceCountry": "RU"
+    },
+    "1503037": {
+      "name": "Кодинск",
+      "sourceCountry": "RU"
+    },
+    "1503082": {
+      "name": "Коченёво",
+      "sourceCountry": "RU"
+    },
+    "1503277": {
+      "name": "Киселёвск",
+      "sourceCountry": "RU"
+    },
+    "1503772": {
+      "name": "Ханты-Мансийск",
+      "sourceCountry": "RU"
+    },
+    "1503901": {
+      "name": "Кемерово",
+      "sourceCountry": "RU"
+    },
+    "1503940": {
+      "name": "Кедровка",
+      "sourceCountry": "RU"
+    },
+    "1504139": {
+      "name": "Кайеркан",
+      "sourceCountry": "RU"
+    },
+    "1504212": {
+      "name": "Катайск",
+      "sourceCountry": "RU"
+    },
+    "1504251": {
+      "name": "Касли",
+      "sourceCountry": "RU"
+    },
+    "1504317": {
+      "name": "Карталы",
+      "sourceCountry": "RU"
+    },
+    "1504489": {
+      "name": "Карасук",
+      "sourceCountry": "RU"
+    },
+    "1504636": {
+      "name": "Карабаш",
+      "sourceCountry": "RU"
+    },
+    "1504682": {
+      "name": "Канск",
+      "sourceCountry": "RU"
+    },
+    "1504769": {
+      "name": "Камышлов",
+      "sourceCountry": "RU"
+    },
+    "1504871": {
+      "name": "Камень-на-Оби",
+      "sourceCountry": "RU"
+    },
+    "1504972": {
+      "name": "Калтан",
+      "sourceCountry": "RU"
+    },
+    "1505074": {
+      "name": "Калачинск",
+      "sourceCountry": "RU"
+    },
+    "1505260": {
+      "name": "Ивдель",
+      "sourceCountry": "RU"
+    },
+    "1505429": {
+      "name": "Искитим",
+      "sourceCountry": "RU"
+    },
+    "1505438": {
+      "name": "Исилькуль",
+      "sourceCountry": "RU"
+    },
+    "1505526": {
+      "name": "Ирбит",
+      "sourceCountry": "RU"
+    },
+    "1505579": {
+      "name": "Инта",
+      "sourceCountry": "RU"
+    },
+    "1505933": {
+      "name": "Иланский",
+      "sourceCountry": "RU"
+    },
+    "1506073": {
+      "name": "Гурьевск",
+      "sourceCountry": "RU"
+    },
+    "1506260": {
+      "name": "Горняк",
+      "sourceCountry": "RU"
+    },
+    "1506271": {
+      "name": "Горно-Алтайск",
+      "sourceCountry": "RU"
+    },
+    "1507116": {
+      "name": "Дудинка",
+      "sourceCountry": "RU"
+    },
+    "1507379": {
+      "name": "Дивногорск",
+      "sourceCountry": "RU"
+    },
+    "1507636": {
+      "name": "Чунский",
+      "sourceCountry": "RU"
+    },
+    "1508054": {
+      "name": "Черногорск",
+      "sourceCountry": "RU"
+    },
+    "1508161": {
+      "name": "Черепаново",
+      "sourceCountry": "RU"
+    },
+    "1508291": {
+      "name": "Челябинск",
+      "sourceCountry": "RU"
+    },
+    "1508350": {
+      "name": "Чебаркуль",
+      "sourceCountry": "RU"
+    },
+    "1508879": {
+      "name": "Боровский",
+      "sourceCountry": "RU"
+    },
+    "1508943": {
+      "name": "Бородино",
+      "sourceCountry": "RU"
+    },
+    "1509819": {
+      "name": "Болотное",
+      "sourceCountry": "RU"
+    },
+    "1509852": {
+      "name": "Боготол",
+      "sourceCountry": "RU"
+    },
+    "1509888": {
+      "name": "Богданович",
+      "sourceCountry": "RU"
+    },
+    "1510018": {
+      "name": "Бийск",
+      "sourceCountry": "RU"
+    },
+    "1510203": {
+      "name": "Берёзовский",
+      "sourceCountry": "RU"
+    },
+    "1510205": {
+      "name": "Берёзовский",
+      "sourceCountry": "RU"
+    },
+    "1510255": {
+      "name": "Берёзовка",
+      "sourceCountry": "RU"
+    },
+    "1510350": {
+      "name": "Бердск",
+      "sourceCountry": "RU"
+    },
+    "1510366": {
+      "name": "Белый Яр",
+      "sourceCountry": "RU"
+    },
+    "1510450": {
+      "name": "Белоярский",
+      "sourceCountry": "RU"
+    },
+    "1510469": {
+      "name": "Белово",
+      "sourceCountry": "RU"
+    },
+    "1510853": {
+      "name": "Барнаул",
+      "sourceCountry": "RU"
+    },
+    "1510916": {
+      "name": "Барабинск",
+      "sourceCountry": "RU"
+    },
+    "1511309": {
+      "name": "Асино",
+      "sourceCountry": "RU"
+    },
+    "1511330": {
+      "name": "Асбест",
+      "sourceCountry": "RU"
+    },
+    "1511368": {
+      "name": "Артёмовский",
+      "sourceCountry": "RU"
+    },
+    "1511466": {
+      "name": "Арамиль",
+      "sourceCountry": "RU"
+    },
+    "1511494": {
+      "name": "Анжеро-Судженск",
+      "sourceCountry": "RU"
+    },
+    "1511783": {
+      "name": "Алейск",
+      "sourceCountry": "RU"
+    },
+    "1511954": {
+      "name": "Алапаевск",
+      "sourceCountry": "RU"
+    },
+    "1512086": {
+      "name": "Академгородок",
+      "sourceCountry": "RU"
+    },
+    "1512165": {
+      "name": "Ачинск",
+      "sourceCountry": "RU"
+    },
+    "1512205": {
+      "name": "Абаза",
+      "sourceCountry": "RU"
+    },
+    "1512236": {
+      "name": "Абакан",
+      "sourceCountry": "RU"
+    },
+    "1536289": {
+      "name": "Снежинск",
+      "sourceCountry": "RU"
+    },
+    "1538634": {
+      "name": "Озёрск",
+      "sourceCountry": "RU"
+    },
+    "1538635": {
+      "name": "Железногорск",
+      "sourceCountry": "RU"
+    },
+    "1538636": {
+      "name": "Новоуральск",
+      "sourceCountry": "RU"
+    },
+    "1538637": {
+      "name": "Северск",
+      "sourceCountry": "RU"
+    },
+    "1539209": {
+      "name": "Губкинский",
+      "sourceCountry": "RU"
+    },
+    "1540356": {
+      "name": "Радужный",
+      "sourceCountry": "RU"
+    },
+    "1540711": {
+      "name": "Муравленко",
+      "sourceCountry": "RU"
+    },
+    "1541359": {
+      "name": "Лянтор",
+      "sourceCountry": "RU"
+    },
+    "2012484": {
+      "name": "Зима",
+      "sourceCountry": "RU"
+    },
+    "2012557": {
+      "name": "Железногорск-Илимский",
+      "sourceCountry": "RU"
+    },
+    "2012593": {
+      "name": "Зея",
+      "sourceCountry": "RU"
+    },
+    "2013159": {
+      "name": "Якутск",
+      "sourceCountry": "RU"
+    },
+    "2013229": {
+      "name": "Вяземский",
+      "sourceCountry": "RU"
+    },
+    "2013258": {
+      "name": "Врангель",
+      "sourceCountry": "RU"
+    },
+    "2013348": {
+      "name": "Владивосток",
+      "sourceCountry": "RU"
+    },
+    "2013399": {
+      "name": "Вихоревка",
+      "sourceCountry": "RU"
+    },
+    "2013923": {
+      "name": "Усть-Кут",
+      "sourceCountry": "RU"
+    },
+    "2013952": {
+      "name": "Усть-Илимск",
+      "sourceCountry": "RU"
+    },
+    "2014006": {
+      "name": "Уссурийск",
+      "sourceCountry": "RU"
+    },
+    "2014022": {
+      "name": "Усолье-Сибирское",
+      "sourceCountry": "RU"
+    },
+    "2014407": {
+      "name": "Улан-Удэ",
+      "sourceCountry": "RU"
+    },
+    "2014624": {
+      "name": "Удачный",
+      "sourceCountry": "RU"
+    },
+    "2014718": {
+      "name": "Тында",
+      "sourceCountry": "RU"
+    },
+    "2014927": {
+      "name": "Тулун",
+      "sourceCountry": "RU"
+    },
+    "2015051": {
+      "name": "Трудовое",
+      "sourceCountry": "RU"
+    },
+    "2015833": {
+      "name": "Свободный",
+      "sourceCountry": "RU"
+    },
+    "2016187": {
+      "name": "Спасск-Дальний",
+      "sourceCountry": "RU"
+    },
+    "2016422": {
+      "name": "Слюдянка",
+      "sourceCountry": "RU"
+    },
+    "2016701": {
+      "name": "Шимановск",
+      "sourceCountry": "RU"
+    },
+    "2016764": {
+      "name": "Шелехов",
+      "sourceCountry": "RU"
+    },
+    "2016910": {
+      "name": "Северобайкальск",
+      "sourceCountry": "RU"
+    },
+    "2017487": {
+      "name": "Райчихинск",
+      "sourceCountry": "RU"
+    },
+    "2017945": {
+      "name": "Петровск-Забайкальский",
+      "sourceCountry": "RU"
+    },
+    "2018116": {
+      "name": "Партизанск",
+      "sourceCountry": "RU"
+    },
+    "2019309": {
+      "name": "Нерюнгри",
+      "sourceCountry": "RU"
+    },
+    "2019326": {
+      "name": "Нерчинск",
+      "sourceCountry": "RU"
+    },
+    "2019528": {
+      "name": "Находка",
+      "sourceCountry": "RU"
+    },
+    "2019951": {
+      "name": "Мирный",
+      "sourceCountry": "RU"
+    },
+    "2020689": {
+      "name": "Лучегорск",
+      "sourceCountry": "RU"
+    },
+    "2020812": {
+      "name": "Лесозаводск",
+      "sourceCountry": "RU"
+    },
+    "2020838": {
+      "name": "Ленск",
+      "sourceCountry": "RU"
+    },
+    "2021066": {
+      "name": "Кяхта",
+      "sourceCountry": "RU"
+    },
+    "2021618": {
+      "name": "Краснокаменск",
+      "sourceCountry": "RU"
+    },
+    "2021851": {
+      "name": "Комсомольск-на-Амуре",
+      "sourceCountry": "RU"
+    },
+    "2022890": {
+      "name": "Хабаровск",
+      "sourceCountry": "RU"
+    },
+    "2023058": {
+      "name": "Кавалерово",
+      "sourceCountry": "RU"
+    },
+    "2023469": {
+      "name": "Иркутск",
+      "sourceCountry": "RU"
+    },
+    "2023782": {
+      "name": "Гусиноозёрск",
+      "sourceCountry": "RU"
+    },
+    "2025159": {
+      "name": "Дальнереченск",
+      "sourceCountry": "RU"
+    },
+    "2025339": {
+      "name": "Чита",
+      "sourceCountry": "RU"
+    },
+    "2025404": {
+      "name": "Чигири",
+      "sourceCountry": "RU"
+    },
+    "2025527": {
+      "name": "Черемхово",
+      "sourceCountry": "RU"
+    },
+    "2026126": {
+      "name": "Борзя",
+      "sourceCountry": "RU"
+    },
+    "2026303": {
+      "name": "Большой Камень",
+      "sourceCountry": "RU"
+    },
+    "2026583": {
+      "name": "Бодайбо",
+      "sourceCountry": "RU"
+    },
+    "2026609": {
+      "name": "Благовещенск",
+      "sourceCountry": "RU"
+    },
+    "2026643": {
+      "name": "Биробиджан",
+      "sourceCountry": "RU"
+    },
+    "2026696": {
+      "name": "Бикин",
+      "sourceCountry": "RU"
+    },
+    "2026895": {
+      "name": "Белогорск",
+      "sourceCountry": "RU"
+    },
+    "2026979": {
+      "name": "Байкальск",
+      "sourceCountry": "RU"
+    },
+    "2027296": {
+      "name": "Айхал",
+      "sourceCountry": "RU"
+    },
+    "2027456": {
+      "name": "Артём",
+      "sourceCountry": "RU"
+    },
+    "2027468": {
+      "name": "Арсеньев",
+      "sourceCountry": "RU"
+    },
+    "2027667": {
+      "name": "Ангарск",
+      "sourceCountry": "RU"
+    },
+    "2027749": {
+      "name": "Амурск",
+      "sourceCountry": "RU"
+    },
+    "2027968": {
+      "name": "Алдан",
+      "sourceCountry": "RU"
+    },
+    "2028078": {
+      "name": "Агинское",
+      "sourceCountry": "RU"
+    },
+    "2051471": {
+      "name": "Дальнегорск",
+      "sourceCountry": "RU"
+    },
+    "2051523": {
+      "name": "Братск",
+      "sourceCountry": "RU"
+    },
+    "2055166": {
+      "name": "Саянск",
+      "sourceCountry": "RU"
+    },
+    "2056881": {
+      "name": "Маркова",
+      "sourceCountry": "RU"
+    },
+    "2118647": {
+      "name": "Вилючинск",
+      "sourceCountry": "RU"
+    },
+    "2119441": {
+      "name": "Южно-Сахалинск",
+      "sourceCountry": "RU"
+    },
+    "2119538": {
+      "name": "Елизово",
+      "sourceCountry": "RU"
+    },
+    "2119932": {
+      "name": "Ванино",
+      "sourceCountry": "RU"
+    },
+    "2121052": {
+      "name": "Советская Гавань",
+      "sourceCountry": "RU"
+    },
+    "2121909": {
+      "name": "Поронайск",
+      "sourceCountry": "RU"
+    },
+    "2122104": {
+      "name": "Петропавловск-Камчатский",
+      "sourceCountry": "RU"
+    },
+    "2122614": {
+      "name": "Оха",
+      "sourceCountry": "RU"
+    },
+    "2122850": {
+      "name": "Николаевск-на-Амуре",
+      "sourceCountry": "RU"
+    },
+    "2122894": {
+      "name": "Невельск",
+      "sourceCountry": "RU"
+    },
+    "2123628": {
+      "name": "Магадан",
+      "sourceCountry": "RU"
+    },
+    "2124286": {
+      "name": "Корсаков",
+      "sourceCountry": "RU"
+    },
+    "2124615": {
+      "name": "Холмск",
+      "sourceCountry": "RU"
+    },
+    "2127202": {
+      "name": "Анадырь",
+      "sourceCountry": "RU"
+    },
+    "2609906": {
+      "name": "Балтийск",
+      "sourceCountry": "RU"
+    },
+    "6315399": {
+      "name": "Исакогорка",
+      "sourceCountry": "RU"
+    },
+    "6417459": {
+      "name": "Краснознаменск",
+      "sourceCountry": "RU"
+    },
+    "6418146": {
+      "name": "Чертаново Второе",
+      "sourceCountry": "RU"
+    },
+    "6418201": {
+      "name": "Загорье",
+      "sourceCountry": "RU"
+    },
+    "6418220": {
+      "name": "Орехово-Борисово",
+      "sourceCountry": "RU"
+    },
+    "6418787": {
+      "name": "Метрогородок",
+      "sourceCountry": "RU"
+    },
+    "6695754": {
+      "name": "Когалым",
+      "sourceCountry": "RU"
+    },
+    "6696686": {
+      "name": "Пыть-Ях",
+      "sourceCountry": "RU"
+    },
+    "6696767": {
+      "name": "Лангепас",
+      "sourceCountry": "RU"
+    },
+    "6853140": {
+      "name": "Лесной",
+      "sourceCountry": "RU"
+    },
+    "7117880": {
+      "name": "Заря",
+      "sourceCountry": "RU"
+    },
+    "7117885": {
+      "name": "Радужный",
+      "sourceCountry": "RU"
+    },
+    "7287775": {
+      "name": "Нижнесортымский",
+      "sourceCountry": "RU"
+    },
+    "7289676": {
+      "name": "Покачи",
+      "sourceCountry": "RU"
+    },
+    "7290697": {
+      "name": "Излучинск",
+      "sourceCountry": "RU"
+    },
+    "7496732": {
+      "name": "Красная Глинка",
+      "sourceCountry": "RU"
+    },
+    "8504946": {
+      "name": "Черная речка",
+      "sourceCountry": "RU"
+    },
+    "8504947": {
+      "name": "Юнтолово",
+      "sourceCountry": "RU"
+    },
+    "8504948": {
+      "name": "Петроградка",
+      "sourceCountry": "RU"
+    },
+    "8504950": {
+      "name": "Парнас",
+      "sourceCountry": "RU"
+    },
+    "8504951": {
+      "name": "Калининский",
+      "sourceCountry": "RU"
+    },
+    "8504952": {
+      "name": "Красногвардейский",
+      "sourceCountry": "RU"
+    },
+    "8504953": {
+      "name": "Адмиралтейский",
+      "sourceCountry": "RU"
+    },
+    "8504955": {
+      "name": "Крестовский остров",
+      "sourceCountry": "RU"
+    },
+    "8504958": {
+      "name": "Академическое",
+      "sourceCountry": "RU"
+    },
+    "8504959": {
+      "name": "Финляндский",
+      "sourceCountry": "RU"
+    },
+    "8504960": {
+      "name": "Центральный",
+      "sourceCountry": "RU"
+    },
+    "8505053": {
+      "name": "Восточное Дегунино",
+      "sourceCountry": "RU"
+    },
+    "8521440": {
+      "name": "Дзержинский",
+      "sourceCountry": "RU"
+    },
+    "11886891": {
+      "name": "Федоровский",
+      "sourceCountry": "RU"
+    },
+    "12041452": {
+      "name": "Межгорье",
+      "sourceCountry": "RU"
+    },
+    "12750458": {
+      "name": "Семендер",
+      "sourceCountry": "RU"
+    },
+    "618800": {
+      "name": "Жодино",
+      "sourceCountry": "BY"
+    },
+    "618806": {
+      "name": "Жлобин",
+      "sourceCountry": "BY"
+    },
+    "618815": {
+      "name": "Житковичи",
+      "sourceCountry": "BY"
+    },
+    "619066": {
+      "name": "Заславль",
+      "sourceCountry": "BY"
+    },
+    "620127": {
+      "name": "Витебск",
+      "sourceCountry": "BY"
+    },
+    "620181": {
+      "name": "Вилейка",
+      "sourceCountry": "BY"
+    },
+    "620391": {
+      "name": "Волковыск",
+      "sourceCountry": "BY"
+    },
+    "621074": {
+      "name": "Светлогорск",
+      "sourceCountry": "BY"
+    },
+    "621266": {
+      "name": "Столбцы",
+      "sourceCountry": "BY"
+    },
+    "621713": {
+      "name": "Сморгонь",
+      "sourceCountry": "BY"
+    },
+    "621729": {
+      "name": "Смолевичи",
+      "sourceCountry": "BY"
+    },
+    "621741": {
+      "name": "Слуцк",
+      "sourceCountry": "BY"
+    },
+    "621754": {
+      "name": "Слоним",
+      "sourceCountry": "BY"
+    },
+    "622113": {
+      "name": "Щучин",
+      "sourceCountry": "BY"
+    },
+    "622428": {
+      "name": "Солигорск",
+      "sourceCountry": "BY"
+    },
+    "622739": {
+      "name": "Рогачев",
+      "sourceCountry": "BY"
+    },
+    "622794": {
+      "name": "Речица",
+      "sourceCountry": "BY"
+    },
+    "622997": {
+      "name": "Пружаны",
+      "sourceCountry": "BY"
+    },
+    "623317": {
+      "name": "Полоцк",
+      "sourceCountry": "BY"
+    },
+    "623549": {
+      "name": "Пинск",
+      "sourceCountry": "BY"
+    },
+    "623760": {
+      "name": "Поставы",
+      "sourceCountry": "BY"
+    },
+    "623941": {
+      "name": "Островец",
+      "sourceCountry": "BY"
+    },
+    "624034": {
+      "name": "Осиповичи",
+      "sourceCountry": "BY"
+    },
+    "624079": {
+      "name": "Орша",
+      "sourceCountry": "BY"
+    },
+    "624700": {
+      "name": "Несвиж",
+      "sourceCountry": "BY"
+    },
+    "624784": {
+      "name": "Новополоцк",
+      "sourceCountry": "BY"
+    },
+    "624785": {
+      "name": "Новогрудок",
+      "sourceCountry": "BY"
+    },
+    "625144": {
+      "name": "Минск",
+      "sourceCountry": "BY"
+    },
+    "625324": {
+      "name": "Мозырь",
+      "sourceCountry": "BY"
+    },
+    "625409": {
+      "name": "Марьина Горка",
+      "sourceCountry": "BY"
+    },
+    "625625": {
+      "name": "Молодечно",
+      "sourceCountry": "BY"
+    },
+    "625665": {
+      "name": "Могилёв",
+      "sourceCountry": "BY"
+    },
+    "625743": {
+      "name": "Лепель",
+      "sourceCountry": "BY"
+    },
+    "625818": {
+      "name": "Лунинец",
+      "sourceCountry": "BY"
+    },
+    "625972": {
+      "name": "Логойск",
+      "sourceCountry": "BY"
+    },
+    "626081": {
+      "name": "Лида",
+      "sourceCountry": "BY"
+    },
+    "626450": {
+      "name": "Кричев",
+      "sourceCountry": "BY"
+    },
+    "627083": {
+      "name": "Колодищи",
+      "sourceCountry": "BY"
+    },
+    "627145": {
+      "name": "Кобрин",
+      "sourceCountry": "BY"
+    },
+    "627751": {
+      "name": "Калинковичи",
+      "sourceCountry": "BY"
+    },
+    "627800": {
+      "name": "Ивацевичи",
+      "sourceCountry": "BY"
+    },
+    "627811": {
+      "name": "Иваново",
+      "sourceCountry": "BY"
+    },
+    "627904": {
+      "name": "Гродно",
+      "sourceCountry": "BY"
+    },
+    "627905": {
+      "name": "Горки",
+      "sourceCountry": "BY"
+    },
+    "627907": {
+      "name": "Гомель",
+      "sourceCountry": "BY"
+    },
+    "627908": {
+      "name": "Глубокое",
+      "sourceCountry": "BY"
+    },
+    "628634": {
+      "name": "Дзержинск",
+      "sourceCountry": "BY"
+    },
+    "629018": {
+      "name": "Добруш",
+      "sourceCountry": "BY"
+    },
+    "629447": {
+      "name": "Быхов",
+      "sourceCountry": "BY"
+    },
+    "629454": {
+      "name": "Берёза",
+      "sourceCountry": "BY"
+    },
+    "629634": {
+      "name": "Брест",
+      "sourceCountry": "BY"
+    },
+    "630376": {
+      "name": "Борисов",
+      "sourceCountry": "BY"
+    },
+    "630429": {
+      "name": "Барановичи",
+      "sourceCountry": "BY"
+    },
+    "630468": {
+      "name": "Бобруйск",
+      "sourceCountry": "BY"
+    },
+    "630515": {
+      "name": "Ошмяны",
+      "sourceCountry": "BY"
+    },
+    "6846555": {
+      "name": "Фаниполь",
+      "sourceCountry": "BY"
+    }
+  },
+  "sources": [
+    {
+      "country": "RU",
+      "url": "https://download.geonames.org/export/dump/alternatenames/RU.zip",
+      "archiveSha256": "6907c9bb5d6fe114e5bd211221c31ef2c7a6946e4526a97672180400bc6681d2",
+      "table": "RU.txt",
+      "tableSha256": "3a2d2ed81570d6709b28e07825493aeec72facd8c5be5e5b111a6323ab1d7822",
+      "tableBytes": 50308451
+    },
+    {
+      "country": "BY",
+      "url": "https://download.geonames.org/export/dump/alternatenames/BY.zip",
+      "archiveSha256": "4913bdcba8589cc3b6808ed23db23671baa3afaa96a3d49f9cf6807b93ae8bc3",
+      "table": "BY.txt",
+      "tableSha256": "2fd18e6c0cb2683203d8ceda7e1a827286eda13b88b144e71108f84567290caa",
+      "tableBytes": 4152958
+    }
+  ],
+  "ambiguities": {
+    "468671": {
+      "country": "RU",
+      "primary": "Yasnogorsk",
+      "candidates": [
+        "Лаптево",
+        "Ясногорск"
+      ]
+    },
+    "472234": {
+      "country": "RU",
+      "primary": "Volzhsk",
+      "candidates": [
+        "Волжск",
+        "Лопатино"
+      ]
+    },
+    "485888": {
+      "country": "RU",
+      "primary": "Suvorov",
+      "candidates": [
+        "Суворов",
+        "Суворовский"
+      ]
+    },
+    "495394": {
+      "country": "RU",
+      "primary": "Shchëkino",
+      "candidates": [
+        "Щекино",
+        "Щёкино"
+      ]
+    },
+    "496275": {
+      "country": "RU",
+      "primary": "Severoural’sk",
+      "candidates": [
+        "Петропавловский",
+        "Североуральск"
+      ]
+    },
+    "501175": {
+      "country": "RU",
+      "primary": "Rostov-on-Don",
+      "candidates": [
+        "Ростов",
+        "Ростов-на-Дону"
+      ]
+    },
+    "508656": {
+      "country": "RU",
+      "primary": "Pochep",
+      "candidates": [
+        "Почеп",
+        "Почёп"
+      ]
+    },
+    "509052": {
+      "country": "RU",
+      "primary": "Plavsk",
+      "candidates": [
+        "Плавск",
+        "Плавское",
+        "Сергиевское"
+      ]
+    },
+    "534838": {
+      "country": "RU",
+      "primary": "Liski",
+      "candidates": [
+        "Георгиу-Деж",
+        "Лиски"
+      ]
+    },
+    "539110": {
+      "country": "RU",
+      "primary": "Kuntsevo",
+      "candidates": [
+        "Кунцево",
+        "Кунцёво"
+      ]
+    },
+    "541406": {
+      "country": "RU",
+      "primary": "Biryulëvo Zapadnoye",
+      "candidates": [
+        "Бирюлёво Западное",
+        "Красный Строитель"
+      ]
+    },
+    "542184": {
+      "country": "RU",
+      "primary": "Krasnovishersk",
+      "candidates": [
+        "Вижаиха",
+        "Красновишерск"
+      ]
+    },
+    "542634": {
+      "country": "RU",
+      "primary": "Presnenskiy",
+      "candidates": [
+        "Красная Пресня",
+        "Пресненский"
+      ]
+    },
+    "548506": {
+      "country": "RU",
+      "primary": "Kireyevsk",
+      "candidates": [
+        "Киреевка",
+        "Киреевск"
+      ]
+    },
+    "549479": {
+      "country": "RU",
+      "primary": "Khoroshëvo-Mnevniki",
+      "candidates": [
+        "Хорошёво",
+        "Хорошёво-Мнёвники"
+      ]
+    },
+    "569636": {
+      "country": "RU",
+      "primary": "Chegem",
+      "candidates": [
+        "Чегем",
+        "Чегем Первый"
+      ]
+    },
+    "583589": {
+      "country": "RU",
+      "primary": "Levoberezhnyy",
+      "candidates": [
+        "Аксиньино",
+        "Левобережная",
+        "Левобережный"
+      ]
+    },
+    "829005": {
+      "country": "RU",
+      "primary": "Lesnoy",
+      "candidates": [
+        "Лесной",
+        "Свердловск-45"
+      ]
+    },
+    "1485357": {
+      "country": "RU",
+      "primary": "Zavodoukovsk",
+      "candidates": [
+        "Деревня Уковская",
+        "Заводоуковск"
+      ]
+    },
+    "1492663": {
+      "country": "RU",
+      "primary": "Serov",
+      "candidates": [
+        "Кабаковск",
+        "Надеждинск",
+        "Серов"
+      ]
+    },
+    "1499053": {
+      "country": "RU",
+      "primary": "Megion",
+      "candidates": [
+        "Майон",
+        "Мегион"
+      ]
+    },
+    "1503335": {
+      "country": "RU",
+      "primary": "Kirovgrad",
+      "candidates": [
+        "Калата",
+        "Кировград"
+      ]
+    },
+    "1504343": {
+      "country": "RU",
+      "primary": "Karpinsk",
+      "candidates": [
+        "Богословский",
+        "Карпинск",
+        "Угольный"
+      ]
+    },
+    "1504826": {
+      "country": "RU",
+      "primary": "Kamensk-Ural’skiy",
+      "candidates": [
+        "Каменск",
+        "Каменск-Уральский"
+      ]
+    },
+    "1505453": {
+      "country": "RU",
+      "primary": "Ishim",
+      "candidates": [
+        "Ишим",
+        "Коркина Слобода"
+      ]
+    },
+    "1507488": {
+      "country": "RU",
+      "primary": "Degtyarsk",
+      "candidates": [
+        "Дегтярка",
+        "Дегтярск"
+      ]
+    },
+    "2015310": {
+      "country": "RU",
+      "primary": "Fokino",
+      "candidates": [
+        "Тихоокеанский",
+        "Фокино"
+      ]
+    },
+    "8504949": {
+      "country": "RU",
+      "primary": "Vasyl'evsky Ostrov",
+      "candidates": [
+        "Василеостровский",
+        "Васильевский остров"
+      ]
+    },
+    "8504964": {
+      "country": "RU",
+      "primary": "Svetlanovskiy",
+      "candidates": [
+        "Светлановский",
+        "Светлановское"
+      ]
+    },
+    "8504965": {
+      "country": "RU",
+      "primary": "Sampsonievskiy",
+      "candidates": [
+        "Сампсониевский",
+        "Сампсониевское"
+      ]
+    }
+  },
+  "errors": [],
+  "selection": "ru in Cyrillic only; no Latin or mixed-script aliases, historic, colloquial, ended or future names; preferred then non-short; ambiguous ties omitted",
+  "summary": {
+    "knownCities": 1164,
+    "localizedCities": 1126,
+    "ambiguousCities": 30,
+    "failedCountries": 0
+  }
+}

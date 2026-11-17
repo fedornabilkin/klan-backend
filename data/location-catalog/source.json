@@ -1,0 +1,34 @@
+{
+  "source": "GeoNames",
+  "license": "CC BY 4.0",
+  "attribution": "Geographical data from GeoNames (https://www.geonames.org/), licensed under CC BY 4.0.",
+  "urls": [
+    "https://download.geonames.org/export/dump/countryInfo.txt",
+    "https://download.geonames.org/export/dump/cities15000.zip"
+  ],
+  "countries": 250,
+  "cities": 34214,
+  "russianCityNames": 1126,
+  "russianNameSources": [
+    {
+      "country": "RU",
+      "url": "https://download.geonames.org/export/dump/alternatenames/RU.zip",
+      "archiveSha256": "6907c9bb5d6fe114e5bd211221c31ef2c7a6946e4526a97672180400bc6681d2",
+      "table": "RU.txt",
+      "tableSha256": "3a2d2ed81570d6709b28e07825493aeec72facd8c5be5e5b111a6323ab1d7822",
+      "tableBytes": 50308451
+    },
+    {
+      "country": "BY",
+      "url": "https://download.geonames.org/export/dump/alternatenames/BY.zip",
+      "archiveSha256": "4913bdcba8589cc3b6808ed23db23671baa3afaa96a3d49f9cf6807b93ae8bc3",
+      "table": "BY.txt",
+      "tableSha256": "2fd18e6c0cb2683203d8ceda7e1a827286eda13b88b144e71108f84567290caa",
+      "tableBytes": 4152958
+    }
+  ],
+  "sha256": {
+    "countryInfo": "79f8f59ea01cbb40438bf1856dd6c2ff201f03f8fc72d0530b2646aaf603ef04",
+    "cities15000": "8a7016b53d4bc7edfd10f243a7c5e1a7e98dcd04d040724d8d72cc2e9b92af0f"
+  }
+}
