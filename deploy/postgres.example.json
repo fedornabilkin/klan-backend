@@ -1,0 +1,7 @@
+{
+  "binDir": "C:/PostgreSQL/16/bin",
+  "dataDir": "C:/KlanData/postgres/data",
+  "logFile": "C:/KlanData/postgres/postgres.log",
+  "host": "127.0.0.1",
+  "port": 5433
+}

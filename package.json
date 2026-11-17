@@ -9,7 +9,17 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "local:start": "node scripts/local.mjs start",
+    "local:stop": "node scripts/local.mjs stop",
+    "local:status": "node scripts/local.mjs status",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
+    "test:tools": "tsx --test tools/*.test.ts tools/importers/*.test.ts tools/checks/telegram/*.test.ts",
+    "check:telegram": "tsx tools/checks/telegram/telegram-check.ts",
+    "import:telegram": "tsx tools/importers/telegram-import-cli.ts",
+    "import:challenge": "tsx tools/importers/challenge-import-cli.ts",
+    "verify:october": "tsx tools/checks/verify-october-import.ts",
+    "catalog:build": "node tools/scripts/build-location-catalog.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

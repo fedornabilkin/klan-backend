@@ -1,0 +1,10 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+!src/**
+!data/
+!data/location-catalog/
+!data/location-catalog/**
+src/**/*.test.ts
