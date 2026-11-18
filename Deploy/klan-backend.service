@@ -1,0 +1,24 @@
+[Unit]
+Description=Klan backend API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=klan
+Group=klan
+WorkingDirectory=/srv/klan-backend/Project
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/klan/backend.env
+ExecStart=/usr/bin/node /srv/klan-backend/Project/dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

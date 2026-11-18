@@ -1,0 +1,49 @@
+{
+  "name": "@klan/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --import tsx --watch src/server.ts",
+    "dev:demo": "node --import tsx --watch src/demo.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
+    "start": "node dist/server.js",
+    "local:start": "node ../Scripts/local.mjs start",
+    "local:stop": "node ../Scripts/local.mjs stop",
+    "local:status": "node ../Scripts/local.mjs status",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
+    "test:tools": "node --import tsx --test tools/*.test.ts tools/importers/*.test.ts tools/checks/telegram/*.test.ts",
+    "check:telegram": "node --import tsx tools/checks/telegram/telegram-check.ts",
+    "import:telegram": "node --import tsx tools/importers/telegram-import-cli.ts",
+    "import:challenge": "node --import tsx tools/importers/challenge-import-cli.ts",
+    "verify:october": "node --import tsx tools/checks/verify-october-import.ts",
+    "catalog:build": "node tools/scripts/build-location-catalog.mjs",
+    "setup:local": "node ../Scripts/prepare-local.mjs",
+    "prelocal:start": "npm run setup:local",
+    "test:setup": "node --test ../Scripts/prepare-local.test.mjs"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

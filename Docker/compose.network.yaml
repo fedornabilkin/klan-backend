@@ -1,0 +1,6 @@
+# Optional integration: docker network create klan
+# docker compose --env-file Docker/.env -f Docker/compose.yaml -f Docker/compose.network.yaml up -d --build
+networks:
+  application:
+    name: ${KLAN_NETWORK:-klan}
+    external: true

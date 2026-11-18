@@ -3,7 +3,6 @@ dist/
 .env
 .env.*
 !.env.example
-!.env.compose.example
 .local/
 *.log
 coverage/
@@ -12,5 +11,5 @@ playwright-report/
 .idea/
 .vscode/
 # Runtime data, personal imports and backups belong outside this repository.
-data/imports/
-data/backups/
+Project/data/imports/
+Project/data/backups/
