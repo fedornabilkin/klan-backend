@@ -230,13 +230,21 @@ test('bot-only asks for the existing API secret and accepts a private remote ori
   assert.match(setup.read('opt/klan/bot/shared/runtime.env'), /^BOT_BACKEND_URL=http:\/\/10\.23\.0\.8:3101$/m);
 });
 
-test('IP configuration writes a common HTTPS origin with the selected port', { skip: unavailable }, (context) => {
+test('IP configuration can set up Telegram sign-in without prompting for groups', { skip: unavailable }, (context) => {
   const setup = fixture(context);
   const ip = '192.0.2.33';
-  const result = setup.configure('all', [ip, '8443', token, 'Klan_Test_Bot', '-1234567', '', 'ops@example.test'], {}, 'configure-ip');
+  const result = setup.configure('all', [ip, '8443', token, 'Klan_Test_Bot', '12345', 'ops@example.test'], {
+    TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: 'false',
+  }, 'configure-ip');
   successful(result);
   assert.equal(setup.read('opt/klan/frontend/shared/site-origin'), 'https://' + ip + ':8443\n');
-  assert.ok(setup.read('opt/klan/backend/shared/runtime.env').includes('APP_ORIGIN=https://' + ip + ':8443\n'));
+  const backend = setup.read('opt/klan/backend/shared/runtime.env');
+  assert.ok(backend.includes('APP_ORIGIN=https://' + ip + ':8443\n'));
+  assert.match(backend, /^TELEGRAM_GROUP_IDS=$/m);
+  assert.match(backend, /^TELEGRAM_REQUIRE_GROUP_MEMBERSHIP=false$/m);
+  assert.match(backend, /^TELEGRAM_ADMIN_IDS=12345$/m);
+  assert.doesNotMatch(result.stderr, /ID разрешённых групп/);
+  assert.ok(setup.read('opt/klan/bot/shared/runtime.env').includes('TELEGRAM_BOT_TOKEN=' + token + '\n'));
 });
 
 test('a fresh standalone bot requires an explicit API address', { skip: unavailable }, (context) => {

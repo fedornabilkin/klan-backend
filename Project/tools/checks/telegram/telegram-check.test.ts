@@ -18,6 +18,13 @@ test('Production preflight performs only read-only bot/group checks', async () =
   assert.deepEqual(fake.calls, ['getMe', 'getWebhookInfo', 'getChat', 'getChatMember']);
 });
 
+test('Account-only preflight checks the bot and polling without querying any group', async () => {
+  const fake = client();
+  const result = await checkTelegramProduction({ ...config, telegramGroupMembershipRequired: false }, fake.request);
+  assert.ok(result.every(check => check.ok));
+  assert.deepEqual(fake.calls, ['getMe', 'getWebhookInfo']);
+});
+
 test('Preflight blocks unsafe environment, token mismatch, webhook and missing bot admin rights', async () => {
   const fake = client();
   assert.ok((await checkTelegramProduction({ ...config, demo: true }, fake.request)).some(check => !check.ok));

@@ -37,6 +37,7 @@ test('Production config rejects demo, non-HTTPS and malformed Telegram policy', 
   assert.equal(readConfig(env).membershipTtlMs, 60_000);
   for (const patch of [
     { DEMO_MODE: 'true' }, { APP_ORIGIN: 'http://klan.example.org' }, { TELEGRAM_GROUP_IDS: 'a-group' },
+    { TELEGRAM_GROUP_IDS: '' }, { TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: 'of' },
     { TELEGRAM_ADMIN_IDS: '-1001' }, { TELEGRAM_GROUP_LEVELS: '{"-1002":"admin"}' },
     { TELEGRAM_MEMBERSHIP_TTL_SECONDS: '600' }, { TELEGRAM_MEMBERSHIP_TTL_SECONDS: '15.5' },
   ]) assert.throws(() => readConfig({ ...env, ...patch }));

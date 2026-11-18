@@ -4,7 +4,7 @@ import { parseGroupLevels, type GroupLevels } from './access.js';
 export interface Config {
   port: number; demo: boolean; production: boolean; origin: string; databaseUrl?: string; demoDatabaseUrl?: string;
   botToken?: string; botUsername?: string; telegramGroups: string[]; adminTelegramIds: string[]; sessionTtlMs: number;
-  telegramGroupLevels?: GroupLevels; membershipTtlMs?: number;
+  telegramGroupLevels?: GroupLevels; membershipTtlMs?: number; telegramGroupMembershipRequired?: boolean;
   demoUserId?: string; demoAccessLevel?: 'member' | 'admin';
   botInternalSecret?: string; demoDataFile?: string;
 }
@@ -12,6 +12,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === 'production';
   const demo = env.DEMO_MODE === 'true';
   if (production && demo) throw new Error('DEMO_MODE cannot be enabled in production');
+  const requireMembership = env.TELEGRAM_REQUIRE_GROUP_MEMBERSHIP ?? 'true';
+  if (requireMembership !== 'true' && requireMembership !== 'false') {
+    throw new Error('TELEGRAM_REQUIRE_GROUP_MEMBERSHIP must be true or false');
+  }
   const config: Config = {
     port: Number(env.PORT || 3001), demo, production,
     demoUserId: env.DEMO_USER_ID?.trim() || undefined,
@@ -22,6 +26,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botInternalSecret: env.BOT_INTERNAL_SECRET?.trim() || undefined,
     demoDataFile: env.DEMO_DATA_FILE?.trim() || undefined,
     telegramGroups: [...new Set((env.TELEGRAM_GROUP_IDS || '').split(',').map(s => s.trim()).filter(Boolean))],
+    telegramGroupMembershipRequired: requireMembership === 'true',
     adminTelegramIds: [...new Set((env.TELEGRAM_ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean))],
     membershipTtlMs: Number(env.TELEGRAM_MEMBERSHIP_TTL_SECONDS || 60) * 1000,
     sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
@@ -39,7 +44,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   try { origin = new URL(config.origin); } catch { throw new Error('APP_ORIGIN must be an absolute HTTP(S) origin'); }
   if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== config.origin || origin.username || origin.password) throw new Error('APP_ORIGIN must contain only scheme and host, without path, query or trailing slash');
   if (!demo && !config.databaseUrl) throw new Error('DATABASE_URL is required. For isolated local preview run npm run dev:demo.');
-  if (production && (!config.botToken || !config.botUsername || !config.telegramGroups.length)) throw new Error('Telegram bot and membership groups must be configured for production');
+  if (production && (!config.botToken || !config.botUsername)) throw new Error('Telegram bot must be configured for production');
+  if (production && config.telegramGroupMembershipRequired && !config.telegramGroups.length) {
+    throw new Error('TELEGRAM_GROUP_IDS is required when Telegram group membership is checked');
+  }
   if (production && !config.botInternalSecret) throw new Error('BOT_INTERNAL_SECRET is required for the separate Telegram bot');
   if (production && origin.protocol !== 'https:') throw new Error('APP_ORIGIN must use HTTPS in production');
   return config;

@@ -54,7 +54,7 @@ npm start
 
 Для демо `DEMO_USER_ID` задаёт существующий внутренний ID профиля; произвольный первый пользователь не выбирается. `DEMO_ACCESS_LEVEL=admin` действует только для демонстрационной сессии. Путь `DEMO_DATA_FILE=.local/demo.json` разрешается от `Project/`; можно указать абсолютный путь к приватному файлу. Не используйте production-базу для демовхода.
 
-Production запрещает демо и требует `APP_ORIGIN=https://ваш-домен` без пути и завершающего `/`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` без `@`, разрешённые `TELEGRAM_GROUP_IDS` и `BOT_INTERNAL_SECRET`. Этот секрет должен совпадать с `BOT_BACKEND_SECRET` отдельного bot. Числовые ID администраторов задаются в `TELEGRAM_ADMIN_IDS`; username не даёт прав администратора. Получение обновлений Telegram выполняет отдельный bot.
+Production требует HTTPS-адрес в `APP_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` без `@` и `BOT_INTERNAL_SECRET`, совпадающий с `BOT_BACKEND_SECRET` бота. По умолчанию для входа нужно состоять в одной из групп `TELEGRAM_GROUP_IDS`. С `TELEGRAM_REQUIRE_GROUP_MEMBERSHIP=false` любой пользователь, который подтвердил вход через бота, получает роль участника. В этом режиме роль администратора назначается по числовому ID из `TELEGRAM_ADMIN_IDS`. Отдельный бот получает обновления Telegram.
 
 Реальные `.env`, `Project/.local/`, импорты и снимки базы исключены из Git. `Docker/Dockerfile.dockerignore` ограничивает build context исходниками, npm/TypeScript-конфигурацией и публичным справочником. Секреты передаются при запуске и не попадают в образ.
 

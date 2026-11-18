@@ -69,6 +69,7 @@ export function createAuth(
   const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/' };
   const membershipChecks = new Map<string, { expiresAt: number; access: AccessSummary | undefined }>();
   const pendingChecks = new Map<string, Promise<AccessSummary | undefined>>();
+  const requireMembership = config.telegramGroupMembershipRequired !== false;
 
   async function telegram<T>(method: string, payload: object, signal?: AbortSignal): Promise<T> {
     if (!config.botToken) throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Вход через Telegram пока не настроен.');
@@ -88,7 +89,11 @@ export function createAuth(
   }
 
   async function telegramAccess(telegramId: string, fresh = false): Promise<AccessSummary | undefined> {
-    if (!config.botToken || config.telegramGroups.length === 0) return undefined;
+    if (!config.botToken) return undefined;
+    if (!requireMembership) {
+      return accessForLevel(config.adminTelegramIds.includes(telegramId) ? 'admin' : 'member', 'telegram');
+    }
+    if (config.telegramGroups.length === 0) return undefined;
     const known = membershipChecks.get(telegramId);
     if (!fresh && known && known.expiresAt > now()) return known.access;
     const pending = pendingChecks.get(telegramId);
@@ -222,8 +227,8 @@ export function createAuth(
 
   router.post('/telegram/start', async (_req, res, next) => {
     try {
-      if (!config.botToken || !config.botUsername || config.telegramGroups.length === 0) {
-        throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Для входа администратор должен настроить бота и группу Telegram.');
+      if (!config.botToken || !config.botUsername || (requireMembership && config.telegramGroups.length === 0)) {
+        throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Для входа администратор должен настроить авторизацию через Telegram.');
       }
       const id = randomBytes(24).toString('hex');
       const browserToken = randomBytes(32).toString('hex');
@@ -265,8 +270,7 @@ export function createAuth(
         res.json({ data: { status: approvedUser } });
         return;
       }
-      // Membership may have changed after the bot approved the request. Recheck
-      // before issuing a session; approval alone is not a reusable permission.
+      // Recompute access before issuing a session in case group membership changed.
       const telegramId = await repo.read(state => Object.entries(state.telegramUsers).find(([, userId]) => userId === approvedUser.id)?.[0]);
       const access = telegramId ? await telegramAccess(telegramId, true) : undefined;
       const user = access ? await synchronizeAccess(approvedUser.id, access) : undefined;

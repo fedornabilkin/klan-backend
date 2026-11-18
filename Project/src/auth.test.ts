@@ -5,7 +5,7 @@ import express, { type ErrorRequestHandler } from 'express';
 import type { AddressInfo } from 'node:net';
 import { createAuth, hashToken, isTelegramMember, readCookie, type AuthDependencies } from './auth.js';
 import { emptyState, MemoryRepository } from './repository.js';
-import type { Config } from './config.js';
+import { readConfig, type Config } from './config.js';
 import type { User } from './shared/contracts.js';
 
 const admin: User = {
@@ -81,6 +81,41 @@ test('Demo entry remains disabled in production even if incorrectly configured',
   const f = await fixture({ production: true, demo: true });
   try { assert.equal((await fetch(`${f.base}/demo`, { method: 'POST' })).status, 404); }
   finally { await f.close(); }
+});
+
+test('Production account-only sign-in still needs bot approval and respects explicit admin IDs', async () => {
+  const config = readConfig({
+    NODE_ENV: 'production', APP_ORIGIN: 'https://192.0.2.33:8443', DATABASE_URL: 'postgresql://db/klan',
+    TELEGRAM_BOT_TOKEN: 'test-only', TELEGRAM_BOT_USERNAME: 'klan_test_bot', BOT_INTERNAL_SECRET: 'test-secret'.repeat(4),
+    TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: 'false', TELEGRAM_ADMIN_IDS: '12345',
+  });
+  const telegramCalls: string[] = [];
+  const f = await fixture(config, { telegramRequest: async <T>(method: string) => {
+    telegramCalls.push(method);
+    return {} as T;
+  } });
+  try {
+    for (const [telegramId, role] of [[64321, 'member'], [12345, 'admin']] as const) {
+      const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
+      assert.equal(start.status, 200);
+      const browserCookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
+      const { data } = await start.json();
+      const statusUrl = `${f.base}/telegram/status/${data.id}`;
+      const pending = await fetch(statusUrl, { headers: { cookie: browserCookie } });
+      assert.equal((await pending.json()).data.status, 'pending');
+      assert.equal(pending.headers.get('set-cookie'), null);
+
+      await f.auth.handleTelegramUpdate({ update_id: telegramId, message: { from: { id: telegramId, first_name: 'Участник' }, chat: { id: telegramId, type: 'private' }, text: `/start ${data.id}` } });
+      const approved = await fetch(statusUrl, { headers: { cookie: browserCookie } });
+      const body = await approved.json();
+      assert.equal(body.data.status, 'approved');
+      assert.equal(body.data.user.access.level, role);
+      const session = approved.headers.getSetCookie().find(cookie => cookie.startsWith('__Host-klan_session='))!;
+      assert.match(session, /; Secure/);
+      assert.equal((await f.auth.userFromCookie(session.split(';')[0]))?.access?.level, role);
+    }
+    assert.deepEqual(telegramCalls, ['sendMessage', 'sendMessage']);
+  } finally { await f.close(); }
 });
 
 test('Demo selects only the configured profile and grants privileges only to its session', async () => {

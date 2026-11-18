@@ -28,11 +28,12 @@ function readOnlyClient(token: string): TelegramReadClient {
 /** Does not send messages, consume updates, change webhooks, create sessions or access PostgreSQL. */
 export async function checkTelegramProduction(config: Config, client?: TelegramReadClient): Promise<TelegramCheck[]> {
   const checks: TelegramCheck[] = [];
+  const requireMembership = config.telegramGroupMembershipRequired !== false;
   const ready = config.production && !config.demo && config.origin.startsWith('https://')
-    && !!config.botToken && !!config.botUsername && config.telegramGroups.length > 0;
+    && !!config.botToken && !!config.botUsername && (!requireMembership || config.telegramGroups.length > 0);
   checks.push({ name: 'configuration', ok: ready, message: ready
     ? 'Production, HTTPS, DEMO_MODE=false и параметры бота заданы.'
-    : 'Нужны NODE_ENV=production, HTTPS APP_ORIGIN, DEMO_MODE=false, токен, username и разрешённые группы.' });
+    : 'Нужны production, HTTPS, параметры бота и список групп, если включена проверка членства.' });
   if (!ready) return checks;
   const request = client ?? readOnlyClient(config.botToken!);
   let bot: Bot;
@@ -51,6 +52,7 @@ export async function checkTelegramProduction(config: Config, client?: TelegramR
       ? 'У бота настроен webhook. Для long polling его нужно отключить отдельно; эта проверка ничего не меняет.'
       : 'Webhook отсутствует: можно использовать один экземпляр long polling.' });
   } catch { checks.push({ name: 'polling', ok: false, message: 'Не удалось проверить настройку webhook.' }); }
+  if (!requireMembership) return checks;
   for (const [index, group] of config.telegramGroups.entries()) {
     try {
       const chat = await request<Chat>('getChat', { chat_id: group });
