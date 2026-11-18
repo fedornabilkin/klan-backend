@@ -37,11 +37,13 @@ function harness(context, { previous = true } = {}) {
   const root = join(temporary, 'klan', 'backend');
   const bin = join(temporary, 'bin');
   const log = join(temporary, 'calls.log');
+  const composeLog = join(temporary, 'compose.log');
   const source = join(temporary, 'source');
   const environment = {
     ...bashEnvironment,
     TEST_BIN: shellPath(bin),
     TEST_LOG: shellPath(log),
+    TEST_COMPOSE_LOG: shellPath(composeLog),
     TEST_SOURCE: shellPath(source), TEST_IMAGE_MARKER: shellPath(join(temporary, 'image-built')),
     FAIL_PREFLIGHT: '', FAIL_START: '', FAIL_VERIFY: '', FAIL_STOP: '', FAIL_BUILD: '',
     FAIL_PREPARE: '', ADVANCE_MAIN: '', REUSE_IMAGE: '',
@@ -63,7 +65,7 @@ if [[ "$1" == build ]]; then
   if [[ "$ADVANCE_MAIN" == yes ]]; then git -C "$TEST_SOURCE" -c user.name=Test -c user.email=test@example.test commit --allow-empty -m 'Newer commit' >/dev/null; fi
   exit 0
 fi
-if [[ "$1" == compose ]]; then printf 'docker:config\\n' >> "$TEST_LOG"; exit 0; fi
+if [[ "$1" == compose ]]; then printf 'docker:config\\n' >> "$TEST_LOG"; printf '%s\\n' "$*" >> "$TEST_COMPOSE_LOG"; exit 0; fi
 printf 'Unexpected mocked Docker command\\n' >&2; exit 98
 `);
   for (const command of ['flock', 'curl']) write(join(bin, command), '#!/usr/bin/env bash\nexit 0\n');
@@ -123,6 +125,9 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
     newId,
     sourceSha,
     incoming,
+    composeCalls: () => existsSync(composeLog) ? readFileSync(composeLog, 'utf8').trim().split('\n') : [],
+    withoutIncomingEnv: () => rmSync(join(incoming, 'runtime.env')),
+    shared: (name, contents) => write(join(root, 'shared', name), contents),
     git: (args) => shell('git "$@"', args),
     nextDeploy: () => {
       shell('git -C "$1" -c user.name=Test -c user.email=test@example.test commit --allow-empty -m Next >/dev/null', [shellPath(source)]);
@@ -163,7 +168,6 @@ for (const [setting, value, expected] of [
   ['GITHUB_SHA', 'main', 'Invalid commit'],
   ['GITHUB_RUN_ID', '../2', 'Invalid run'],
   ['GIT_TOKEN', '', 'Missing setting: GIT_TOKEN'],
-  ['PRODUCTION_ENV', '', 'Missing setting: PRODUCTION_ENV'],
 ]) {
   test(`transport rejects ${setting}=${JSON.stringify(value)} before SSH`, { skip: unavailable }, (context) => {
     const fixture = harness(context);
@@ -312,4 +316,105 @@ test('successive real Git fetches retain main history in the bare cache and arch
   assert.equal(fixture.git([repository, 'rev-parse', 'refs/remotes/origin/main^']), fixture.sourceSha);
   assert.equal(fixture.git([repository, 'rev-list', '--count', 'refs/remotes/origin/main']), '2');
   assert.doesNotMatch(readFileSync(join(fixture.root, 'repository.git', 'config'), 'utf8'), /fake-short-lived-token/);
+});
+
+test('transport accepts an empty production env and delegates to the server configuration', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  const result = fixture.command(join(deployDirectory, 'deploy.sh'), [], { ...transportEnvironment, PRODUCTION_ENV: '' });
+  assert.equal(result.status, 99);
+  assert.deepEqual(fixture.log(), ['unexpected:ssh']);
+  assert.doesNotMatch(result.stderr, /Missing setting/);
+});
+
+test('server runtime is copied verbatim into a private release snapshot when GitHub env is omitted', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.withoutIncomingEnv();
+  const value = "SYNTHETIC_CONFIGURATION=p$a#s'word\nEXAMPLE=$(touch forbidden)\n";
+  fixture.shared('runtime.env', value);
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(readFileSync(join(fixture.root, 'releases', fixture.newId, 'runtime.env'), 'utf8'), value);
+  assert.equal(readFileSync(join(fixture.root, 'shared', 'runtime.env'), 'utf8'), value);
+  assert.equal(existsSync(join(fixture.root, 'releases', fixture.newId, 'forbidden')), false);
+  assert.doesNotMatch(result.stdout + result.stderr, /p\$a#s|touch forbidden/);
+});
+
+test('a supplied GitHub env takes precedence without overwriting the server defaults', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.shared('runtime.env', 'SYNTHETIC_CONFIGURATION=server-default\n');
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(readFileSync(join(fixture.root, 'releases', fixture.newId, 'runtime.env'), 'utf8'), 'SYNTHETIC_CONFIGURATION=only\n');
+  assert.equal(readFileSync(join(fixture.root, 'shared', 'runtime.env'), 'utf8'), 'SYNTHETIC_CONFIGURATION=server-default\n');
+});
+
+test('missing runtime configuration fails before build and leaves the active release intact', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.withoutIncomingEnv();
+  const result = fixture.deploy();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Missing runtime configuration/);
+  assert.equal(fixture.current(), `releases/${oldId}`);
+  assert.deepEqual(fixture.hooks(), []);
+  assert.ok(!fixture.log().includes('docker:build'));
+});
+
+test('private API binding remains independent of saved runtime env during rollback', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.shared('api-bind-address', '10.27.8.9\n');
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  fixture.shared('runtime.env', 'SYNTHETIC_CONFIGURATION=changed-later\n');
+  const rollback = fixture.rollback();
+  assert.equal(rollback.status, 0, rollback.stderr || rollback.error?.message);
+  const override = join(fixture.root, 'shared', 'api-private.compose.yaml');
+  assert.match(readFileSync(override, 'utf8'), /host_ip: "10\.27\.8\.9"/);
+  assert.ok(fixture.composeCalls().every((line) => line.includes('/shared/api-private.compose.yaml')));
+  assert.equal(readFileSync(join(fixture.root, 'releases', oldId, 'runtime.env'), 'utf8'), 'SYNTHETIC_CONFIGURATION=only\n');
+  assert.equal(fixture.current(), `releases/${oldId}`);
+});
+
+test('legacy server settings keep loopback-only deployment and remove an obsolete private override', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.shared('api-private.compose.yaml', 'obsolete private binding\n');
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(existsSync(join(fixture.root, 'shared', 'api-private.compose.yaml')), false);
+  assert.ok(fixture.composeCalls().every((line) => !line.includes('/shared/api-private.compose.yaml')));
+});
+
+test('wildcard, public, malformed and ambiguous bind addresses are rejected confidentially', { skip: unavailable }, (context) => {
+  for (const address of ['0.0.0.0', '8.8.8.8', '127.0.0.2', '172.32.0.1', '192.169.0.1', '10.0.0.256', '010.0.0.1', '10.0.0.1\nSECRET=value']) {
+    const fixture = harness(context);
+    fixture.shared('api-bind-address', address + '\n');
+    const result = fixture.deploy();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /bind address/);
+    assert.doesNotMatch(result.stdout + result.stderr, /SECRET=value/);
+    assert.equal(fixture.current(), `releases/${oldId}`);
+    assert.deepEqual(fixture.hooks(), []);
+  }
+});
+
+const composeExecutable = process.env.DEPLOY_TEST_COMPOSE || 'docker';
+const composeArguments = process.env.DEPLOY_TEST_COMPOSE ? [] : ['compose'];
+const composeProbe = spawnSync(composeExecutable, [...composeArguments, 'version'], { encoding: 'utf8' });
+test('real Compose merges loopback and private API endpoints without exposing PostgreSQL', {
+  skip: unavailable || (composeProbe.status !== 0 ? 'Docker Compose CLI is unavailable; no daemon is needed' : false),
+}, (context) => {
+  const fixture = harness(context);
+  fixture.shared('api-bind-address', '192.168.2.15\n');
+  const deploy = fixture.deploy();
+  assert.equal(deploy.status, 0, deploy.stderr);
+  const result = spawnSync(composeExecutable, [...composeArguments,
+    '-f', resolve(deployDirectory, '..', 'Docker', 'compose.production.yaml'),
+    '-f', join(fixture.root, 'shared', 'api-private.compose.yaml'),
+    'config', '--no-env-resolution', '--format', 'json'], {
+    env: { ...process.env, IMAGE_REF: 'klan-backend:' + fixture.sourceSha }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const services = JSON.parse(result.stdout).services;
+  assert.deepEqual(services.api.ports.map((port) => `${port.host_ip}:${port.published}:${port.target}`).sort(),
+    ['127.0.0.1:3101:3001', '192.168.2.15:3101:3001']);
+  assert.deepEqual(services.db.ports || [], []);
 });

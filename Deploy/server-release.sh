@@ -32,9 +32,37 @@ release_dir=''
 scratch=''
 changed=0
 finished=0
+api_compose_args=()
+configure_api_binding() {
+  local shared="$deploy_root/shared" address=127.0.0.1 octet a b c d
+  [[ ! -L "$shared" ]] || fail 'shared must be a real directory'
+  mkdir -p "$shared"
+  if [[ -e "$shared/api-bind-address" || -L "$shared/api-bind-address" ]]; then
+    [[ -f "$shared/api-bind-address" && ! -L "$shared/api-bind-address" ]] || fail 'Invalid API bind address file'
+    address="$(cat -- "$shared/api-bind-address")"
+  fi
+  [[ "$address" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || fail 'API bind address must be 127.0.0.1 or a private IPv4 address'
+  IFS=. read -r a b c d <<< "$address"
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" == 0 || "$octet" != 0* ]] || fail 'API bind address must use canonical IPv4 notation'
+    (( 10#$octet <= 255 )) || fail 'Invalid API bind address'
+  done
+  [[ "$address" == 127.0.0.1 || "$a" == 10 || ( "$a" == 172 && "$b" -ge 16 && "$b" -le 31 ) || ( "$a" == 192 && "$b" == 168 ) ]] ||
+    fail 'API bind address must be 127.0.0.1 or an RFC1918 private IPv4 address'
+  [[ ! -L "$shared/api-private.compose.yaml" ]] || fail 'API bind override must not be a symlink'
+  api_compose_args=()
+  if [[ "$address" == 127.0.0.1 ]]; then
+    rm -f -- "$shared/api-private.compose.yaml"
+  else
+    # Keep the loopback binding from the release and add a separate private interface.
+    printf 'services:\n  api:\n    ports:\n      - target: 3001\n        published: "3101"\n        host_ip: "%s"\n        protocol: tcp\n' "$address" > "$shared/api-private.compose.yaml"
+    chmod 600 "$shared/api-private.compose.yaml"
+    api_compose_args=(-f "$shared/api-private.compose.yaml")
+  fi
+}
 compose() {
   docker compose --project-name klan-backend-production --project-directory "$release_dir/Docker" \
-    --env-file /dev/null -f "$release_dir/Docker/compose.production.yaml" "$@"
+    --env-file /dev/null -f "$release_dir/Docker/compose.production.yaml" "${api_compose_args[@]}" "$@"
 }
 select_release() {
   release_dir="$1"
@@ -80,6 +108,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+configure_api_binding
 
 if [[ "$operation" == deploy ]]; then
   release_id="$(basename -- "$request_dir")"
@@ -87,10 +116,16 @@ if [[ "$operation" == deploy ]]; then
   [[ "$(realpath -- "$request_dir")" == "$request_dir" ]] || fail 'Invalid incoming path'
   sha="$(cat -- "$request_dir/commit")"
   [[ "$sha" =~ ^[a-f0-9]{40}$ && "$release_id" == "$sha-"* ]] || fail 'Invalid commit'
-  [[ -f "$request_dir/runtime.env" && ! -L "$request_dir/runtime.env" ]] || fail 'Missing runtime environment'
+  [[ ! -L "$request_dir/runtime.env" ]] || fail 'Incoming runtime environment must not be a symlink'
+  runtime_source="$request_dir/runtime.env"
+  if [[ ! -s "$runtime_source" ]]; then runtime_source="$deploy_root/shared/runtime.env"; fi
+  [[ -f "$runtime_source" && -s "$runtime_source" && ! -L "$runtime_source" ]] ||
+    fail 'Missing runtime configuration: set PRODUCTION_ENV or shared/runtime.env'
   IFS= read -r git_token || fail 'Missing repository token on stdin'
   [[ -n "$git_token" ]] || fail 'Empty repository token'
   scratch="$(mktemp -d "$deploy_root/.source-XXXXXX")"
+  cp -- "$runtime_source" "$scratch/runtime.env"
+  chmod 600 "$scratch/runtime.env"
   cat > "$scratch/askpass" <<'ASKPASS'
 #!/bin/sh
 case "$1" in
@@ -120,7 +155,7 @@ ASKPASS
   cmp -- "$script_path" "$scratch/source/Deploy/server-release.sh" >/dev/null || fail 'Deployment script does not match the checked commit'
   [[ -f "$scratch/source/Docker/Dockerfile" && -f "$scratch/source/Deploy/service.sh" ]] || fail 'Incomplete source release'
   mv -T "$scratch/source" "$release_dir"
-  cp -- "$request_dir/runtime.env" "$release_dir/runtime.env"
+  cp -- "$scratch/runtime.env" "$release_dir/runtime.env"
   chmod 600 "$release_dir/runtime.env"
   printf '%s\n' "$sha" > "$release_dir/commit"
   printf 'klan-backend:%s\n' "$sha" > "$release_dir/image-ref"
