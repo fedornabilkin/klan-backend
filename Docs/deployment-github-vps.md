@@ -1,190 +1,119 @@
-# Production Klan на существующем VPS Ablakin
+# Выкладка Клана на сервер Облакина
 
-Это общая пошаговая инструкция для **klan-backend, klan-frontend и klan-bot**. Каждый репозиторий развёртывается независимо из `main`: ветки `master` в текущих репозиториях нет. Тестового стенда нет. Тесты выполняются в GitHub Actions и локально, без развёртывания отдельного окружения.
+У каждого компонента свой репозиторий и свой workflow **Production**. После успешных проверок push в `main` (включая merge pull request) обновляет только этот компонент. В pull request выполняются проверки. Первый выпуск выполняйте по порядку: бэкенд → фронтенд → бот.
 
-Workflow [Production](../.github/workflows/deploy.yml) запускается после изменения `main`, в том числе после merge pull request. Pull request запускает только проверки; публикация образа и выкладка ему недоступны. Прямой push в `main` тоже вызывает выкладку. Чтобы выпускать только через merge, включите защиту ветки с обязательным pull request и успешной проверкой «Проверки». Если позднее появится `master`, измените фильтры `push`/`pull_request`, условие image-job, проверку актуального коммита и разрешённую ветку environment во всех нужных репозиториях.
-
-## 1. Что сохраняется от Ablakin
-
-Используются существующие Linux VPS, SSH-пользователь `deploy`, Docker и системный nginx. Новая Caddy-служба на 80/443 не устанавливается: Caddy работает только внутри frontend-контейнера за nginx. Node.js, npm, Git и checkout приложения серверу для выкладки не нужны.
-
-| Ресурс | Назначение |
+| Компонент | Что происходит при выкладке |
 | --- | --- |
-| `/opt/klan/backend`, `/opt/klan/frontend`, `/opt/klan/bot` | Независимые релизы, ссылки `current` и `previous`, блокировка деплоя |
-| `/opt/klan/backend/backups` | Дампы PostgreSQL перед обновлением API |
-| `klan-backend-production`, `klan-frontend-production`, `klan-bot-production` | Отдельные Compose projects |
-| Docker network `klan-production` | Связь приложений; API имеет DNS alias `api` |
-| Docker volume `klan-production-postgres` | Отдельная PostgreSQL 16 для Klan |
-| Docker volume `klan-production-bot-state` | Подтверждённый offset Telegram |
-| `127.0.0.1:3101` | API для nginx на хосте |
-| `127.0.0.1:8088` | HTTP frontend для nginx на хосте |
+| Бэкенд | Сервер получает проверенный коммит `klan-backend` из GitHub, собирает API на месте и запускает его через Compose. Сохраняются база, закрытая сеть и адрес API для бота. |
+| Фронтенд | GitHub собирает `Project/dist`. На сервер по SSH поступают архив статики и контрольная сумма. nginx отдаёт опубликованные файлы из `/var/www/klan`. |
+| Бот | GitHub публикует образ в GHCR. Сервер скачивает его по digest и запускает один worker с прежним постоянным хранилищем offset. |
 
-Ресурсы и подсети Ablakin не используются для данных Klan. Здесь выбрана собственная PostgreSQL в контейнере: установленная для другого проекта база не считается подходящей автоматически. Порты базы и бота наружу не публикуются. Не запускайте параллельно старые Compose/systemd экземпляры Klan с теми же данными или Telegram-токеном.
+## 1. Проверить существующий VPS
 
-## 2. Проверить готовность сервера
-
-Выполните через существующее доверенное SSH-подключение:
+Команды рассчитаны на сервер Debian/Ubuntu с системным nginx, работающим SSH-пользователем `deploy`, Docker Engine и Compose **2.30.0+**. Общий сервер должен поддерживать `linux/amd64` для текущего образа бота. Для сборки API на сервере нужны Git, место под исходники, образы и кеш сборки, а также доступ к GitHub, Docker Hub и npm registry. GHCR нужен для бота. Фронтенд собирается на GitHub и использует на VPS nginx и обычные файловые утилиты.
 
 ```sh
-uname -m
-docker version
+command -v git rsync tar gzip sha256sum bash curl flock realpath
 docker compose version
 sudo -u deploy docker info >/dev/null
-command -v bash curl flock tar realpath
 sudo nginx -t
-sudo ss -lntp | grep -E ':(8088|3101)\b' || true
+sudo ss -lntp | grep -E ':3101\b' || true
 ```
 
-Нужен `x86_64` / `linux/amd64`, Docker Engine и **Compose 2.30.0+**. Старый `docker-compose` v1 из Ablakin эту схему не заменяет. Если Compose v2 отсутствует, установите/обновите plugin по [официальной инструкции Docker](https://docs.docker.com/compose/install/linux/) для уже установленного Docker; работающие контейнеры Ablakin пересоздавать не нужно. Нужны исходящие HTTPS-соединения к GHCR, Docker Hub и Telegram, SSH из GitHub-hosted runners, входящие 80/443 для сайта. Если SSH ограничен firewall, существующие правила Ablakin должны допускать Actions.
+Порт `127.0.0.1:3101` должен быть доступен для API Клана. Публичные 80 и 443 обслуживает существующий nginx. Для доставки GitHub Actions должен иметь доступ к SSH-порту сервера.
 
-Если порты 8088 или 3101 заняты другим приложением, сначала выберите свободные. Менять их нужно согласованно в production Compose, `Deploy/service.sh` и nginx-шаблоне frontend. В текущей конфигурации они фиксированы. Для ARM-сервера сначала измените `platforms` в трёх workflows и проверьте образы.
+## 2. Подготовить каталоги и данные
 
-Далее команды предполагают уже существующего пользователя `deploy` с рабочим SSH-ключом и доступом к Docker. При другом имени подставьте его в команды и `DEPLOY_USER`. Повторно создавать пользователя, устанавливать Docker или менять nginx Ablakin не требуется.
-
-## 3. Создать каталоги, сеть и volumes
-
-Передайте на сервер файл [Deploy/setup-server.sh](../Deploy/setup-server.sh) из этого репозитория, например в `/tmp/klan-setup-server.sh`. Администратор выполняет:
+Скопируйте из этого репозитория [Deploy/setup-server.sh](../Deploy/setup-server.sh) в `/tmp/klan-setup-server.sh` на VPS и выполните:
 
 ```sh
 sudo bash /tmp/klan-setup-server.sh deploy
 ```
 
-Сценарий проверяет существующие инструменты и доступ `deploy` к Docker, создаёт только перечисленные ресурсы Klan. Повторный запуск сохраняет содержимое volumes. Подкаталоги компонентов доступны только пользователю деплоя, поскольку релизы содержат env-файлы. Создание сети не требует фиксированной подсети.
+Скрипт можно повторить при обновлении с прежней схемы. Он создаёт следующие ресурсы:
 
-Если Klan уже работал с данными, остановите его прежние экземпляры и спланируйте перенос базы/offset в новые volumes до первого выпуска. Пустая новая PostgreSQL автоматически получает схему, но не участников из локальной базы. Деплой не импортирует персональные данные. Перенос offset описан в [инструкции bot](https://github.com/fedornabilkin/klan-bot/blob/main/Docs/deployment-github-vps.md).
-
-## 4. Подготовить домен и HTTPS
-
-Выберите домен, например `community.example.com`, направьте DNS A/AAAA на этот VPS. Добавьте **отдельный** nginx virtual host; конфигурация домена Ablakin новый домен не обслужит.
-
-В [инструкции frontend](https://github.com/fedornabilkin/klan-frontend/blob/main/Docs/deployment-github-vps.md#первичная-настройка-nginx-и-https) приведены готовые команды HTTP bootstrap → Certbot → HTTPS, а [Deploy/nginx.production.conf](https://github.com/fedornabilkin/klan-frontend/blob/main/Deploy/nginx.production.conf) содержит конечный шаблон. Замените домен и пути сертификата, проверьте `nginx -t`, затем reload. Не отключайте виртуальные хосты Ablakin. Если сертификат и подходящий vhost уже существуют, достаточно адаптировать их.
-
-nginx направляет `/api` и `/ws` непосредственно на `127.0.0.1:3101`, UI — на `127.0.0.1:8088`, а `/internal` закрывает 404. Это сохраняет один доверенный proxy перед API. Backend `APP_ORIGIN` должен точно совпадать с публичным HTTPS origin без завершающего `/`.
-
-## 5. Создать GitHub environment в каждом репозитории
-
-Откройте каждый репозиторий → **Settings → Environments → New environment → `production`**:
-
-- [klan-backend](https://github.com/fedornabilkin/klan-backend/settings/environments)
-- [klan-frontend](https://github.com/fedornabilkin/klan-frontend/settings/environments)
-- [klan-bot](https://github.com/fedornabilkin/klan-bot/settings/environments)
-
-В Deployment branches разрешите только `main`. **Required reviewers и Wait timer оставьте выключенными**, чтобы после merge выкладка не ждала ручного подтверждения. Разрешите GitHub Actions и используемые actions в настройках репозитория/организации.
-
-В каждом environment создайте одинаково названные **Environment secrets**:
-
-| Secret | Что записать |
+| Ресурс | Назначение |
 | --- | --- |
-| `DEPLOY_HOST` | DNS-имя или IPv4 VPS, без схемы и порта |
-| `DEPLOY_PORT` | Порт SSH, например `22` |
-| `DEPLOY_USER` | `deploy` либо подготовленный пользователь |
-| `DEPLOY_SSH_KEY` | Полный приватный SSH-ключ с переносами строк |
-| `DEPLOY_KNOWN_HOSTS` | Проверенная запись SSH host key для точных host/port |
-| `PRODUCTION_ENV` | Многострочные настройки конкретного компонента из шага 6 |
+| `/var/www/klan` | Только публичные файлы сайта. Пользователь деплоя записывает их, nginx читает. Используйте отдельный каталог для этого сайта: публикация удаляет устаревшие файлы. |
+| `/opt/klan/frontend` | Доставка и предыдущие версии статики. |
+| `/opt/klan/backend` | Локальный Git-репозиторий, каталоги релизов с приватным окружением, резервные копии базы. |
+| `/opt/klan/bot` | Релизы и приватное окружение бота. |
+| Сеть `klan-production` | Бот обращается к API по `http://api:3001`. |
+| Volumes `klan-production-postgres` и `klan-production-bot-state` | Данные PostgreSQL и подтверждённая позиция чтения Telegram. |
 
-Первые пять значений можно использовать из существующей настройки Ablakin, если это тот же сервер, пользователь и ключ. Имена secrets здесь новые. Публичная часть ключа должна уже присутствовать у пользователя сервера в `~/.ssh/authorized_keys`; сам закрытый ключ не размещайте в репозитории.
+При переносе существующих данных сначала спланируйте резервное копирование и восстановление. Новая пустая база получает схему при первом старте API. Если бот уже работал, остановите прежний экземпляр и перенесите offset до запуска нового. [Инструкция бота](https://github.com/fedornabilkin/klan-bot/blob/main/Docs/deployment-github-vps.md)
 
-Для нового `DEPLOY_KNOWN_HOSTS` получите запись `ssh-keyscan -p 22 -t ed25519 ИМЯ-СЕРВЕРА` на доверенной машине. Сравните её fingerprint через `ssh-keygen -lf` с `sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` в доверенной консоли VPS. Только после совпадения сохраните запись. При нестандартном порте ключ относится к `[host]:port`. Во время выкладки проверка host key обязательна, динамического доверия `ssh-keyscan` нет.
+## 3. Настроить домен в nginx
 
-GHCR публикуется через встроенный `GITHUB_TOKEN` с `packages: write`, а deploy-job читает пакет с `packages: read`. Постоянный PAT и предварительный `docker login` на VPS **не нужны**: token передаётся по SSH stdin, временный `DOCKER_CONFIG` удаляется при завершении. В настройках пакета GHCR оставьте наследование прав от репозитория либо разрешите этому репозиторию Actions access. Для существующего одноимённого пакета без такого доступа исправьте разрешения пакета. Секретов `GHCR_TOKEN` или `IMAGE_REF` вручную создавать не нужно.
+Направьте DNS сайта на VPS. Для нового домена добавьте виртуальный хост и выпустите сертификат. Для существующего домена Клана, который проксирует UI на порт 8088, замените маршрут UI на раздачу статики из `/var/www/klan`. Сначала проверьте файлы сайта и спланируйте переключение виртуального хоста на первую статическую версию. Виртуальные хосты Облакина обслуживаются отдельно.
 
-## 6. Заполнить `PRODUCTION_ENV`
+Шаблон сохраняет URL браузера: маршруты приложения открывают `index.html`, `/api` и `/ws` идут на `127.0.0.1:3101`, а публичный `/internal` отвечает 404. Укажите домен и пути к сертификату, выполните `sudo nginx -t` и затем `sudo systemctl reload nginx`. В последующих релизах фронтенда меняются только файлы сайта. [Настройка HTTPS и инструкция первого выпуска](https://github.com/fedornabilkin/klan-frontend/blob/main/Docs/deployment-github-vps.md) · [Шаблон nginx](https://github.com/fedornabilkin/klan-frontend/blob/main/Deploy/nginx.production.conf)
 
-Для каждого компонента используйте **его собственный** `Docker/.env.production.example`. Это другой формат, чем старые `Docker/.env` локального Compose: production передаёт значения через `env_file.format: raw`.
+## 4. Настроить GitHub
 
-Одна строка — `KEY=value`; без `export`, внешних кавычек, подстановок `${...}` и комментария после значения. `$` и кавычки внутри значения остаются буквальными. JSON пишите одной строкой, например `TELEGRAM_GROUP_LEVELS={}`. Примеры не содержат настоящих секретов.
+В Settings → Environments каждого репозитория создайте окружение `production`. Разрешите ветку `main`. Для автоматического выпуска отключите Required reviewers и Wait timer. Настройки доступны в репозиториях [backend](https://github.com/fedornabilkin/klan-backend/settings/environments), [frontend](https://github.com/fedornabilkin/klan-frontend/settings/environments) и [bot](https://github.com/fedornabilkin/klan-bot/settings/environments).
 
-Backend — [пример](../Docker/.env.production.example):
+Добавьте пять **Environment secrets** в каждом из трёх репозиториев:
 
-```dotenv
-APP_ORIGIN=https://community.example.com
-POSTGRES_DB=klan
-POSTGRES_USER=klan
-POSTGRES_PASSWORD=ЗАМЕНИТЬ_СЛУЧАЙНОЙ_HEX_СТРОКОЙ
-DATABASE_URL=postgresql://klan:ТОТ_ЖЕ_ПАРОЛЬ@db:5432/klan
-TELEGRAM_BOT_TOKEN=ТОКЕН_БОТА_KLAN
-TELEGRAM_BOT_USERNAME=ИМЯ_БОТА_БЕЗ_СОБАКИ
-TELEGRAM_GROUP_IDS=ЧИСЛОВЫЕ_ID_ГРУПП_ЧЕРЕЗ_ЗАПЯТУЮ
-TELEGRAM_GROUP_LEVELS={}
-TELEGRAM_MEMBERSHIP_TTL_SECONDS=60
-TELEGRAM_ADMIN_IDS=ЧИСЛОВЫЕ_ID_АДМИНИСТРАТОРОВ
-BOT_INTERNAL_SECRET=СЛУЧАЙНЫЙ_ОБЩИЙ_СЕКРЕТ
-```
+| Имя | Значение |
+| --- | --- |
+| `DEPLOY_HOST` | DNS-имя или IPv4 сервера |
+| `DEPLOY_PORT` | SSH-порт, обычно `22` |
+| `DEPLOY_USER` | Пользователь сервера, по умолчанию `deploy` в инструкции |
+| `DEPLOY_SSH_KEY` | Приватный SSH-ключ с переносами строк. Публичная часть должна быть в `authorized_keys` пользователя. |
+| `DEPLOY_KNOWN_HOSTS` | Проверенная запись SSH-ключа сервера для точных адреса и порта |
 
-Плейсхолдеры выше нужно заменить. Сгенерируйте пароль БД и общий секрет **отдельными** вызовами `openssl rand -hex 32`. Секрет должен содержать 32–256 ASCII-символов без пробелов; hex не требует URL-encoding. `DATABASE_URL` использует host **db**, базу/пользователя/пароль, точно соответствующие `POSTGRES_*`. Проверка перед запуском отклонит несовпадение. Production API не использует `CONTAINER_DATABASE_URL`.
+Для того же хоста и пользователя подойдут значения из настройки Облакина. Если запись ключа новая, получите её через `ssh-keyscan -p ПОРТ -t ed25519 ИМЯ-СЕРВЕРА` и сверьте fingerprint с `sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` через доверенную консоль VPS.
 
-`TELEGRAM_GROUP_IDS` содержит отрицательные числовые ID разрешённых групп. `TELEGRAM_ADMIN_IDS` — положительные числовые ID администраторов, можно оставить пустым. Настройте членство и права бота в нужных группах. Токен должен принадлежать отдельному боту Klan; запуск двух polling worker с токеном Ablakin нарушит работу обоих.
+Дальше настройки различаются:
 
-Для frontend `PRODUCTION_ENV` достаточно комментария `# Frontend production`: runtime-секреты ему не нужны. Не копируйте сюда настройки API.
+- **Frontend.** В *Environment variables* задайте `PRODUCTION_URL`, например `https://community.example.com`. По этому адресу скрипт проверит опубликованную версию. Для сборки сайта используются относительные `/api` и `/ws`.
+- **Backend.** В *Environment secrets* добавьте `PRODUCTION_ENV` по [примеру API](../Docker/.env.production.example). Сервер читает исходники по HTTPS краткоживущим токеном GitHub Actions с правом `contents: read`. Дополнительный ключ доступа к приватному Git-репозиторию на VPS не требуется.
+- **Bot.** В *Environment secrets* добавьте `PRODUCTION_ENV` по [примеру бота](https://github.com/fedornabilkin/klan-bot/blob/main/Docker/.env.production.example). Разрешите workflow публикацию и чтение своего пакета GHCR. Доступ к реестру обеспечивается встроенным токеном workflow.
 
-Для bot:
+## 5. Заполнить окружение API и бота
 
-```dotenv
-TELEGRAM_BOT_TOKEN=ТОТ_ЖЕ_ТОКЕН_ЧТО_У_API
-BOT_BACKEND_SECRET=ТОТ_ЖЕ_СЕКРЕТ_ЧТО_BOT_INTERNAL_SECRET
-```
+В `PRODUCTION_ENV` значения задаются построчно, в формате `KEY=value`, без `export`, внешних кавычек и подстановки ссылок на другие переменные.
 
-NODE_ENV, порты, адрес `http://api:3001` для бота и путь offset фиксированы в production Compose. До первого запуска остановите прежний polling worker с этим токеном и проверьте, что у токена не включён webhook. Сценарий не меняет webhook автоматически. Подробности переноса состояния и ограничений проверки — в инструкции bot.
+- Для API установите `APP_ORIGIN` равным публичному HTTPS-адресу сайта без завершающего слеша. Укажите `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` и согласованную `DATABASE_URL` с хостом `db:5432`. Случайный hex-пароль удобно сгенерировать командой `openssl rand -hex 32`.
+- В API и bot установите один и тот же `TELEGRAM_BOT_TOKEN` бота Клана. Для API укажите `TELEGRAM_BOT_USERNAME` без `@`, отрицательные числовые ID разрешённых групп в `TELEGRAM_GROUP_IDS`, при необходимости роли и числовые ID администраторов.
+- Для внутренней связи сгенерируйте отдельный секрет, например `openssl rand -hex 32`. Запишите его как `BOT_INTERNAL_SECRET` у API и `BOT_BACKEND_SECRET` у бота. До запуска polling проверьте, что у этого токена отключён webhook и остановлены предыдущие worker.
 
-При обновлении secrets они попадут в **следующий** релиз: запустите workflow снова или выполните merge. Старый релиз сохраняет прежний env для отката; при ротации токенов/паролей учитывайте это. Изменение `POSTGRES_PASSWORD` в GitHub не меняет пароль уже инициализированной базы — сначала выполните согласованную ротацию PostgreSQL и обновите `DATABASE_URL`.
+Обновлённый secret применяется при следующей выкладке компонента. При ротации пароля существующей БД смените пароль роли в PostgreSQL и согласованно обновите GitHub secrets.
 
-## 7. Первый выпуск
+## 6. Первый и последующие выпуски
 
-Сначала подготовьте сервер, environment и secrets. Затем опубликуйте изменения deployment в `main` каждого репозитория. Если workflow уже появился в GitHub до настройки, его неудачный запуск не означает готовый production: после настройки повторите **Actions → Production → Run workflow → Branch: main**.
+Подготовив сервер и секреты, опубликуйте изменения в `main`. Для повторного запуска выберите Actions → Production → Run workflow → `main`. При первой выкладке дождитесь успешного результата каждого этапа:
 
-Первый раз запускайте и дожидайтесь зелёного результата в порядке:
-
-1. **Backend**: создаётся схема PostgreSQL, выполняются readiness и `/api/health`.
-2. **Frontend**: проверяются Caddy, HTML приложения, прямой SPA URL и блокировка `/internal`.
-3. **Bot**: до polling проверяются конфигурация, состояние и API; затем запускается ровно один worker.
-
-Последующие merge автоматически обновляют только соответствующий компонент. Workflows сериализованы внутри репозитория; серверный `flock` защищает от одновременных ручных и автоматических обновлений одного компонента. Старый запуск, чей commit уже не вершина `main`, не выкатывается. Это не общий атомарный релиз трёх компонентов: изменения API выпускайте с обратной совместимостью, начиная с backend. Короткий перерыв при пересоздании контейнера возможен.
-
-После первого выпуска проверьте снаружи:
+1. **Бэкенд.** После CI сервер обновляет локальную копию Git и выделяет каталог под проверенный коммит. API собирается на VPS из его Dockerfile, поэтому Docker может использовать сохранённые слои и зависимости. Сервер делает дамп PostgreSQL перед запуском API и проверяет `/api/health`.
+2. **Фронтенд.** CI собирает приложение. Сервер получает архив, проверяет контрольную сумму и публикует статику. По публичному HTTPS-адресу проверяется версия. При общей первой выкладке nginx должен уже обслуживать домен.
+3. **Бот.** До запуска проверяются конфигурация, доступ к offset и API. Затем запускается один worker.
 
 ```sh
-curl --fail --show-error https://community.example.com/api/health
-curl --fail --show-error https://community.example.com/
+curl --fail https://community.example.com/api/health
+curl --fail https://community.example.com/deploy-version.txt
+curl --fail https://community.example.com/users/1
 curl --silent --output /dev/null --write-out '%{http_code}\n' https://community.example.com/internal
 ```
 
-Health должен вернуть `data.status=ok`, `data.demo=false`; последний запрос — `404`. Проверьте вход и WebSocket в обычном пользовательском сценарии. Проверка процесса бота 30 секунд не подтверждает доставку Telegram: ошибки токена/сети или общего секрета могут приводить к повторным попыткам без падения процесса.
+Ожидайте `data.status=ok` и `data.demo=false` у API, SHA коммита фронтенда в файле версии, страницу приложения по прямой ссылке и `404` для внутреннего маршрута. В дальнейшем обновляется компонент, в котором изменился `main`.
 
-## 8. Диагностика и откат
+## 7. Диагностика и возврат версии
 
-Текущий release и логи API от пользователя `deploy`:
+Сопоставьте SHA в журнале workflow с `/deploy-version.txt` фронтенда или с `readlink -f /opt/klan/backend/current` у API. Чтобы посмотреть логи API:
 
 ```sh
-readlink -f /opt/klan/backend/current
 cd /opt/klan/backend/current
 export IMAGE_REF="$(cat image-ref)"
-docker compose --project-name klan-backend-production --project-directory "$PWD/Docker" \
-  --env-file /dev/null -f Docker/compose.production.yaml ps
-docker compose --project-name klan-backend-production --project-directory "$PWD/Docker" \
-  --env-file /dev/null -f Docker/compose.production.yaml logs --tail 100 api
+docker compose -p klan-backend-production -f Docker/compose.production.yaml logs --tail=100 api
 ```
 
-Для frontend/bot замените путь, project name и service (`frontend`/`bot`). Не выводите `runtime.env`, `database.env` или `compose config` без `--quiet`: там находятся секреты.
-
-Если подготовка нового релиза провалилась, текущий контейнер не заменяется. После начала обновления ошибка запуска/readiness вызывает остановку неудачного сервиса и попытку вернуть прежний образ с его env. Workflow остаётся красным даже после успешного восстановления. При самом первом неуспешном выпуске предыдущего релиза нет: сервис останавливается, постоянные данные сохраняются. Если сам откат не удался, журнал явно сообщает `ROLLBACK FAILED`; проверьте сервис вручную.
-
-Ручной возврат последнего успешного релиза, без пересборки и постоянного registry token:
+При ошибке получения исходников или сборки новый API не заменяет работающий. При неудачном запуске сценарий пытается восстановить предыдущий API с сохранёнными образом и окружением. Для ручного возврата запустите от `deploy`:
 
 ```sh
 bash /opt/klan/backend/current/Deploy/server-release.sh rollback
-bash /opt/klan/frontend/current/Deploy/server-release.sh rollback
-bash /opt/klan/bot/current/Deploy/server-release.sh rollback
 ```
 
-Выполняйте только команды нужных компонентов. Требуются предыдущий релиз и сохранённый локально Docker image. Откат проходит ту же блокировку и проверки. Ссылки `current`/`previous` меняются местами после успеха. Следующий merge снова запускает обычный выпуск, поэтому устраните причину ошибки или сделайте revert в Git.
+Сохраните предыдущий релиз и его локальный образ. Откат API оставляет схему базы на текущей версии. Дампы перед обновлениями находятся в `/opt/klan/backend/backups`. Восстановление базы выполняется отдельно. Следите за местом на диске, включая кеш сборки, приватные каталоги релизов и дампы. Настройте регулярную резервную копию базы вне VPS. Обновление базовых образов Node и PostgreSQL можно планировать отдельно от выкладки прикладного кода.
 
-Перед запуском новой API-версии делается `pg_dump --format=custom` в `/opt/klan/backend/backups`; ошибка копирования останавливает обновление. **Откат приложения не отменяет миграции БД.** Миграции должны сохранять совместимость; восстановление дампа — отдельная операция с остановкой записи и согласованной потерей данных после снимка. Автоматически база не восстанавливается и не удаляется. Это не замена регулярным зашифрованным резервным копиям вне VPS: настройте их отдельно до наполнения production.
-
-Скрипты не чистят releases, backups, images или volumes автоматически. Контролируйте диск; сохраняйте как минимум current, previous, соответствующие образы и нужные дампы. Не применяйте `docker compose down --volumes` и общий `docker system prune --volumes`: это затрагивает постоянные данные и другие проекты. При очистке старых релизов помните о содержащихся в них прежних секретах.
-
-## Справочники
-
-- [GitHub deployment environments](https://docs.github.com/en/actions/concepts/workflows-and-actions/deployment-environments)
-- [Docker Actions и GHCR](https://docs.docker.com/build/ci/github-actions/push-multi-registries/)
-- [Compose raw env files](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/)
-- [Compose up: ожидание готовности](https://docs.docker.com/reference/cli/docker/compose/up/)
+Для фронтенда скрипт проверяет версию сайта и при неудаче восстанавливает предыдущую статику. Подробности ручного возврата и особенности первой выкладки приводятся в [инструкции фронтенда](https://github.com/fedornabilkin/klan-frontend/blob/main/Docs/deployment-github-vps.md). Для бота доступны журнал Actions и команда `bash /opt/klan/bot/current/Deploy/server-release.sh rollback`. Сохранённый offset используется и после возврата версии.

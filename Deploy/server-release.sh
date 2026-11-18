@@ -3,23 +3,20 @@ set -euo pipefail
 umask 077
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
-script_path="$(realpath -- "${BASH_SOURCE[0]}")"
-release_dir="$(dirname -- "$(dirname -- "$script_path")")"
-deploy_root="$(dirname -- "$(dirname -- "$release_dir")")"
-component="$(basename -- "$deploy_root")"
-[[ "$component" =~ ^(frontend|backend|bot)$ ]] || fail 'Invalid component directory'
-[[ "$deploy_root" == "/opt/klan/$component" ]] || fail 'Expected /opt/klan/<component>'
+script_path="$(realpath -- "$0")"
+request_dir="$(dirname -- "$(dirname -- "$script_path")")"
+deploy_root="$(dirname -- "$(dirname -- "$request_dir")")"
+[[ "$deploy_root" == '/opt/klan/backend' ]] || fail 'Expected /opt/klan/backend'
 release_pattern='^[a-f0-9]{40}-[0-9]+-[0-9]+$'
 valid_release() {
   [[ "$(dirname -- "$1")" == "$deploy_root/releases" && "$(basename -- "$1")" =~ $release_pattern ]] &&
     [[ "$(realpath -- "$1")" == "$1" ]]
 }
-valid_release "$release_dir" || fail 'Invalid release directory'
-operation="${1:-}"
-[[ "$operation" == deploy || "$operation" == rollback ]] || fail 'Usage: server-release.sh deploy REGISTRY_USER | rollback'
-for command in docker flock curl; do command -v "$command" >/dev/null || fail "Missing command: $command"; done
-version="$(docker compose version --short)"
-version="${version#v}"
+operation=''
+if (( $# > 0 )); then operation=$1; fi
+[[ "$operation" == deploy || "$operation" == rollback ]] || fail 'Usage: server-release.sh deploy | rollback'
+for command in docker flock curl git tar cmp; do command -v "$command" >/dev/null || fail "Missing command: $command"; done
+version="$(docker compose version --short | sed 's/^v//')"
 [[ "$(printf '%s\n' 2.30.0 "$version" | sort -V | head -n 1)" == 2.30.0 ]] || fail 'Docker Compose >=2.30.0 is required'
 exec 9>"$deploy_root/.deploy.lock"
 flock -w 600 9 || fail 'Another deployment is running'
@@ -31,14 +28,12 @@ if [[ -L "$deploy_root/current" ]]; then
 elif [[ -e "$deploy_root/current" ]]; then
   fail 'current must be a managed symlink'
 fi
-if [[ "$operation" == rollback ]]; then
-  [[ -L "$deploy_root/previous" ]] || fail 'No previous release is available'
-  release_dir="$(realpath -- "$deploy_root/previous")"
-  valid_release "$release_dir" || fail 'Invalid previous release'
-fi
-
+release_dir=''
+scratch=''
+changed=0
+finished=0
 compose() {
-  docker compose --project-name "klan-$component-production" --project-directory "$release_dir/Docker" \
+  docker compose --project-name klan-backend-production --project-directory "$release_dir/Docker" \
     --env-file /dev/null -f "$release_dir/Docker/compose.production.yaml" "$@"
 }
 select_release() {
@@ -46,17 +41,16 @@ select_release() {
   valid_release "$release_dir" || return 1
   [[ -f "$release_dir/runtime.env" && ! -L "$release_dir/runtime.env" ]] || return 1
   IMAGE_REF="$(cat -- "$release_dir/image-ref")" || return
-  [[ "$IMAGE_REF" =~ ^ghcr\.io/[a-z0-9_-]+/klan-$component@sha256:[a-f0-9]{64}$ ]] || return 1
+  local sha
+  sha="$(basename -- "$release_dir" | cut -d- -f1)"
+  # A previous locally cached GHCR deployment remains usable for rollback.
+  [[ "$IMAGE_REF" == "klan-backend:$sha" || "$IMAGE_REF" =~ ^ghcr\.io/[a-z0-9_-]+/klan-backend@sha256:[a-f0-9]{64}$ ]] || return 1
   export IMAGE_REF
   cd -- "$release_dir" || return
-  # Each repository owns these service hooks; the release archive is trusted code.
+  unset -f service_prepare_data
   # shellcheck disable=SC1091
   source "$release_dir/Deploy/service.sh" || return
 }
-
-docker_config=''
-changed=0
-finished=0
 cleanup() {
   result=$?
   trap - EXIT INT TERM
@@ -77,34 +71,87 @@ cleanup() {
       printf 'Could not stop the failed service; automatic rollback was not started.\n' >&2
     fi
   fi
-  [[ -z "$docker_config" ]] || rm -rf -- "$docker_config"
+  [[ -z "$scratch" ]] || rm -rf -- "$scratch"
+  if [[ "$operation" == deploy && "$(dirname -- "$request_dir")" == "$deploy_root/incoming" ]]; then
+    rm -f -- "$request_dir/runtime.env"
+  fi
   exit "$result"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-select_release "$release_dir" || fail 'Invalid release metadata'
+
 if [[ "$operation" == deploy ]]; then
-  registry_user="${2:-}"
-  [[ "$registry_user" =~ ^[A-Za-z0-9_-]+(\[bot\])?$ ]] || fail 'Invalid registry user'
-  IFS= read -r registry_token || fail 'Missing registry token on stdin'
-  [[ -n "$registry_token" ]] || fail 'Empty registry token'
-  docker_config="$(mktemp -d "$deploy_root/.docker-XXXXXX")"
-  export DOCKER_CONFIG="$docker_config"
-  printf '%s\n' "$registry_token" | docker login ghcr.io --username "$registry_user" --password-stdin >/dev/null
-  unset registry_token
-  docker pull "$IMAGE_REF"
+  release_id="$(basename -- "$request_dir")"
+  [[ "$release_id" =~ $release_pattern && "$(dirname -- "$request_dir")" == "$deploy_root/incoming" ]] || fail 'Invalid incoming directory'
+  [[ "$(realpath -- "$request_dir")" == "$request_dir" ]] || fail 'Invalid incoming path'
+  sha="$(cat -- "$request_dir/commit")"
+  [[ "$sha" =~ ^[a-f0-9]{40}$ && "$release_id" == "$sha-"* ]] || fail 'Invalid commit'
+  [[ -f "$request_dir/runtime.env" && ! -L "$request_dir/runtime.env" ]] || fail 'Missing runtime environment'
+  IFS= read -r git_token || fail 'Missing repository token on stdin'
+  [[ -n "$git_token" ]] || fail 'Empty repository token'
+  scratch="$(mktemp -d "$deploy_root/.source-XXXXXX")"
+  cat > "$scratch/askpass" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' x-access-token ;;
+  *Password*) printf '%s\n' "$KLAN_GIT_TOKEN" ;;
+  *) exit 1 ;;
+esac
+ASKPASS
+  chmod 700 "$scratch/askpass"
+  repository="$deploy_root/repository.git"
+  [[ ! -L "$repository" ]] || fail 'Repository cache must not be a symlink'
+  if [[ ! -d "$repository" ]]; then git init --bare "$repository" >/dev/null; fi
+  [[ "$(git --git-dir="$repository" rev-parse --is-bare-repository)" == true ]] || fail 'Invalid repository cache'
+  fetch_main() {
+    # The token exists only for this Git process, never in .git/config or a Docker build.
+    LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS="$scratch/askpass" KLAN_GIT_TOKEN="$git_token" \
+      git -c credential.helper= --git-dir="$repository" fetch --no-tags \
+      https://github.com/fedornabilkin/klan-backend.git '+refs/heads/main:refs/remotes/origin/main' || return
+    [[ "$(git --git-dir="$repository" rev-parse 'refs/remotes/origin/main^{commit}')" == "$sha" ]] ||
+      { printf 'main has changed; deploy the latest checked commit.\n' >&2; return 1; }
+  }
+  fetch_main
+  release_dir="$deploy_root/releases/$release_id"
+  [[ ! -e "$release_dir" && ! -L "$release_dir" ]] || fail 'Release already exists; use a new Actions run attempt'
+  mkdir "$scratch/source"
+  git --git-dir="$repository" archive --format=tar "$sha" | tar -xf - -C "$scratch/source"
+  cmp -- "$script_path" "$scratch/source/Deploy/server-release.sh" >/dev/null || fail 'Deployment script does not match the checked commit'
+  [[ -f "$scratch/source/Docker/Dockerfile" && -f "$scratch/source/Deploy/service.sh" ]] || fail 'Incomplete source release'
+  mv -T "$scratch/source" "$release_dir"
+  cp -- "$request_dir/runtime.env" "$release_dir/runtime.env"
+  chmod 600 "$release_dir/runtime.env"
+  printf '%s\n' "$sha" > "$release_dir/commit"
+  printf 'klan-backend:%s\n' "$sha" > "$release_dir/image-ref"
+  select_release "$release_dir" || fail 'Invalid release metadata'
+  if docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
+    [[ "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE_REF")" == "$sha" ]] ||
+      fail 'Existing local image does not match this commit'
+  else
+    docker build --file "$release_dir/Docker/Dockerfile" --tag "$IMAGE_REF" \
+      --label "org.opencontainers.image.revision=$sha" "$release_dir"
+  fi
+  service_preflight
+  compose config --quiet
+  # Builds can take minutes; do not activate a commit superseded during the build.
+  fetch_main
+  unset git_token
 else
+  valid_release "$request_dir" || fail 'Rollback must run from a managed release'
+  [[ -L "$deploy_root/previous" ]] || fail 'No previous release is available'
+  release_dir="$(realpath -- "$deploy_root/previous")"
+  select_release "$release_dir" || fail 'Invalid previous release'
   docker image inspect "$IMAGE_REF" >/dev/null || fail 'Previous image is not available locally'
+  service_preflight
+  compose config --quiet
 fi
-service_preflight
-compose config --quiet
+if declare -F service_prepare_data >/dev/null; then service_prepare_data; fi
 changed=1
 service_start
 service_verify
 
-# A signal must not restore containers after current already points at this release.
-# Finish the short metadata commit before handling process termination again.
+# Keep service state and current pointer consistent when termination arrives during commit.
 trap '' INT TERM
 if [[ -n "$previous_release" && "$previous_release" != "$release_dir" ]]; then
   ln -s "releases/$(basename -- "$previous_release")" "$deploy_root/.previous-$$"
@@ -115,4 +162,4 @@ mv -Tf "$deploy_root/.current-$$" "$deploy_root/current"
 finished=1
 trap 'exit 130' INT
 trap 'exit 143' TERM
-printf 'Production %s is running release %s\n' "$component" "$(basename -- "$release_dir")"
+printf 'Production backend is running release %s\n' "$(basename -- "$release_dir")"

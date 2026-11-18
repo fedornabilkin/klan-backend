@@ -20,6 +20,7 @@ services:
       options: {max-size: 10m, max-file: '3'}
   api:
     image: ${IMAGE_REF:?Use Deploy/server-release.sh}
+    pull_policy: never
     init: true
     restart: unless-stopped
     stop_grace_period: 20s

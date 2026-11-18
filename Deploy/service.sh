@@ -12,7 +12,7 @@ service_preflight() {
   done
   compose config --quiet || return
   if [[ "${operation:-deploy}" == deploy ]]; then
-    docker pull postgres:16-bookworm || return
+    docker image inspect postgres:16-bookworm >/dev/null 2>&1 || docker pull postgres:16-bookworm || return
   else
     docker image inspect postgres:16-bookworm >/dev/null || return
   fi
@@ -28,7 +28,7 @@ service_preflight() {
     } catch { console.error("Invalid production configuration or mismatched database credentials"); process.exit(1); }
   ' || return
 }
-service_start() {
+service_prepare_data() {
   compose up -d --no-build --wait --wait-timeout 180 db || return
   # A snapshot precedes migrations on every deployment, including manual rollback.
   mkdir -p "$deploy_root/backups" || return
@@ -41,6 +41,8 @@ service_start() {
     printf 'Database backup failed; API was not updated.\n' >&2
     return 1
   fi
+}
+service_start() {
   compose up -d --no-build --wait --wait-timeout 180 api || return
 }
 service_verify() {

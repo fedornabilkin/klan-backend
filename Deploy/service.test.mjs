@@ -131,7 +131,7 @@ test('preflight writes only PostgreSQL settings and accepts raw special characte
   assert.equal(readFileSync(join(fixture.release, 'database.env'), 'utf8'),
     "POSTGRES_DB=klan_test\nPOSTGRES_USER=test_user\nPOSTGRES_PASSWORD=p$a#s'word\n");
   assert.equal(fixture.lines()[0], 'config --quiet');
-  assert.equal(fixture.lines()[1], 'docker:pull postgres:16-bookworm');
+  assert.equal(fixture.lines()[1], 'docker:image inspect postgres:16-bookworm');
   assert.doesNotMatch(result.stdout + result.stderr, /synthetic-token|p\$a#s/);
 });
 
@@ -187,7 +187,7 @@ test('manual rollback uses only the local PostgreSQL image and never contacts a 
 
 test('a failed PostgreSQL backup removes its partial file and never updates the API', { skip: unavailable }, (context) => {
   const fixture = harness(context);
-  const result = fixture.run('service_start', { FAIL_BACKUP: 'yes' });
+  const result = fixture.run('service_prepare_data', { FAIL_BACKUP: 'yes' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Database backup failed; API was not updated/);
   assert.equal(fixture.lines()[0], 'up -d --no-build --wait --wait-timeout 180 db');
@@ -198,6 +198,8 @@ test('a failed PostgreSQL backup removes its partial file and never updates the 
 
 test('a successful backup is retained before the API is replaced', { skip: unavailable }, (context) => {
   const fixture = harness(context);
+  const preparation = fixture.run('service_prepare_data');
+  assert.equal(preparation.status, 0, preparation.stderr || preparation.error?.message);
   const result = fixture.run('service_start');
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   const lines = fixture.lines();
