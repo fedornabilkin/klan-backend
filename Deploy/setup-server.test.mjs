@@ -80,24 +80,29 @@ if (( count == 1 )); then printf '%064d\\n' 1; else printf '%064d\\n' 2; fi
   for (const name of ['apt-get', 'gh', 'ssh', 'systemctl']) command(name, record + '\nexit 94');
   mkdirSync(path('run'), { recursive: true });
 
-  let source = readFileSync(join(directory, 'setup-server.sh'), 'utf8').replaceAll('\r\n', '\n');
-  const nginxCall = '    setup_frontend_nginx\n';
-  assert.equal(source.split(nginxCall).length, 2, 'Expected the single frontend handler call');
-  source = source.replace(nginxCall, '    fixture_frontend_nginx\n');
-  for (const systemPath of ['/opt/klan', '/var/www/klan', '/run/klan-setup.lock', '/etc/letsencrypt', '/etc/ssh/ssh_host_']) {
-    source = source.replaceAll(systemPath, `${shellPath(root)}${systemPath}`);
+  function readFixtureScript(name) {
+    let source = readFileSync(join(directory, name), 'utf8').replaceAll('\r\n', '\n');
+    for (const systemPath of ['/opt/klan', '/var/www/klan', '/run/klan-setup.lock', '/etc/letsencrypt', '/etc/ssh/ssh_host_']) {
+      source = source.replaceAll(systemPath, `${shellPath(root)}${systemPath}`);
+    }
+    return source.replaceAll('[[ $EUID == 0 ]]', '[[ "$TEST_ROOT" != "" ]]');
   }
-  source = source.replaceAll('[[ $EUID == 0 ]]', '[[ "$TEST_ROOT" != "" ]]');
-  source = `fixture_frontend_nginx() {
+  write('setup-server.sh', readFixtureScript('setup-server.sh'));
+
+  function writeDeploymentScript() {
+    const source = readFixtureScript('setup-deployment.sh');
+    const nginxCall = '    setup_frontend_nginx\n';
+    assert.equal(source.split(nginxCall).length, 2, 'Expected the single frontend handler call');
+    write('setup-deployment.sh', `fixture_frontend_nginx() {
   printf 'nginx:configured\\n' >> "$TEST_LOG"
   mkdir -p -- "$TEST_ROOT/etc/letsencrypt/live/$site_domain"
   printf 'synthetic-certificate' > "$TEST_ROOT/etc/letsencrypt/live/$site_domain/fullchain.pem"
 }
-${source}`;
-  write('setup-server.sh', source);
+${source.replace(nginxCall, '    fixture_frontend_nginx\n')}`);
+  }
 
-  const run = (args, answers, extra) => spawnSync(bash, [
-    '-c', 'export PATH="$TEST_BIN:$PATH"; exec bash "$@"', 'test', shellPath(path('setup-server.sh')), ...args,
+  const run = (name, args, answers, extra) => spawnSync(bash, [
+    '-c', 'export PATH="$TEST_BIN:$PATH"; exec bash "$@"', 'test', shellPath(path(name)), ...args,
   ], {
     env: { ...process.env, TEST_BIN: shellPath(bin), TEST_ROOT: shellPath(root), TEST_LOG: shellPath(log), ...extra },
     input: answers.map((answer) => answer + '\n').join(''), encoding: 'utf8', timeout: 30_000,
@@ -107,8 +112,11 @@ ${source}`;
     exists: (relative) => existsSync(path(relative)),
     read: (relative) => readFileSync(path(relative), 'utf8'),
     calls: () => existsSync(log) ? readFileSync(log, 'utf8') : '',
-    prepare: (args = [], extra = {}) => run(args, [], { ...extra, TEST_OFFLINE: 'yes' }),
-    configure: (role, answers, extra = {}) => run(['configure-domain', role], answers, extra),
+    prepare: (args = [], extra = {}) => run('setup-server.sh', args, [], { ...extra, TEST_OFFLINE: 'yes' }),
+    configure: (role, answers, extra = {}) => {
+      writeDeploymentScript();
+      return run('setup-deployment.sh', ['configure-domain', role], answers, extra);
+    },
   };
 }
 
@@ -116,6 +124,17 @@ function successful(result, secrets = [token]) {
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   for (const secret of secrets) assert.ok(!(result.stdout + result.stderr).includes(secret), 'A supplied secret reached output');
 }
+
+test('server preparation exposes only component selection', { skip: unavailable }, (context) => {
+  const setup = fixture(context);
+  const help = setup.prepare(['--help']);
+  successful(help);
+  assert.match(help.stdout, /all\|frontend\|backend\|bot/);
+  for (const formerMode of ['configure-domain', 'github']) {
+    assert.equal(setup.prepare([formerMode]).status, 2);
+  }
+  assert.equal(setup.calls(), '');
+});
 
 test('default preparation allocates all server resources offline and preserves the installed data on repeat', { skip: unavailable }, (context) => {
   const setup = fixture(context);
