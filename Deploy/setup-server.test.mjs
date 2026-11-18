@@ -76,7 +76,9 @@ if (( count == 1 )); then printf '%064d\\n' 1; else printf '%064d\\n' 2; fi
 `);
   command('ip', `${record}\nprintf '2: eth0 inet 10.23.0.8/24 brd 10.23.0.255 scope global eth0\\n'`);
   command('uname', "printf 'x86_64\\n'");
-  for (const name of ['curl', 'nginx', 'certbot', 'rsync', 'dpkg', 'flock']) command(name, record);
+  for (const name of ['curl', 'nginx', 'rsync', 'dpkg', 'flock']) command(name, record);
+  command('certbot', record + '\nprintf "certbot 5.4.0\\n"');
+  command('ss', record);
   for (const name of ['apt-get', 'gh', 'ssh', 'systemctl']) command(name, record + '\nexit 94');
   mkdirSync(path('run'), { recursive: true });
 
@@ -113,9 +115,9 @@ ${source.replace(nginxCall, '    fixture_frontend_nginx\n')}`);
     read: (relative) => readFileSync(path(relative), 'utf8'),
     calls: () => existsSync(log) ? readFileSync(log, 'utf8') : '',
     prepare: (args = [], extra = {}) => run('setup-server.sh', args, [], { ...extra, TEST_OFFLINE: 'yes' }),
-    configure: (role, answers, extra = {}) => {
+    configure: (role, answers, extra = {}, mode = 'configure-domain') => {
       writeDeploymentScript();
-      return run('setup-deployment.sh', ['configure-domain', role], answers, extra);
+      return run('setup-deployment.sh', [mode, role], answers, extra);
     },
   };
 }
@@ -226,6 +228,15 @@ test('bot-only asks for the existing API secret and accepts a private remote ori
   successful(repeated, [token, existingSecret]);
   assert.doesNotMatch(repeated.stderr, /ввод скрыт/);
   assert.match(setup.read('opt/klan/bot/shared/runtime.env'), /^BOT_BACKEND_URL=http:\/\/10\.23\.0\.8:3101$/m);
+});
+
+test('IP configuration writes a common HTTPS origin with the selected port', { skip: unavailable }, (context) => {
+  const setup = fixture(context);
+  const ip = '192.0.2.33';
+  const result = setup.configure('all', [ip, '8443', token, 'Klan_Test_Bot', '-1234567', '', 'ops@example.test'], {}, 'configure-ip');
+  successful(result);
+  assert.equal(setup.read('opt/klan/frontend/shared/site-origin'), 'https://' + ip + ':8443\n');
+  assert.ok(setup.read('opt/klan/backend/shared/runtime.env').includes('APP_ORIGIN=https://' + ip + ':8443\n'));
 });
 
 test('a fresh standalone bot requires an explicit API address', { skip: unavailable }, (context) => {
