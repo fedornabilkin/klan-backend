@@ -3,6 +3,9 @@ dist/
 .env
 .env.*
 !.env.example
+!Docker/.env.production.example
+runtime.env
+database.env
 .local/
 *.log
 coverage/

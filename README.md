@@ -39,6 +39,7 @@ API доступен на `http://localhost:3001`; `GET /api/health` прове�
 
 ## Документация
 
+- [Автодеплой в production из main и пошаговая настройка VPS](Docs/deployment-github-vps.md)
 - [Локальный запуск, Docker и сервер](Docs/deployment.md)
 - [Контракт API](Docs/API-CONTRACT.md), [архитектура](Docs/architecture.md), [требования](Docs/requirements.md)
 - [Инструменты импорта и проверок](Project/tools/README.md)
