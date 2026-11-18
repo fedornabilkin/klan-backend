@@ -165,6 +165,7 @@ ASKPASS
       fail 'Existing local image does not match this commit'
   else
     build_command=(docker build)
+    build_context="$release_dir"
     network_file="$deploy_root/shared/build-network"
     if [[ -e "$network_file" || -L "$network_file" ]]; then
       [[ -f "$network_file" && ! -L "$network_file" ]] || fail 'Build network setting must be a regular file'
@@ -172,9 +173,14 @@ ASKPASS
       docker network inspect klan-build >/dev/null || fail 'Missing isolated klan-build network'
       # The Docker driver cannot select a custom build network with BuildKit.
       build_command=(env DOCKER_BUILDKIT=0 docker build --network klan-build)
+      # The classic builder reads only a root .dockerignore. Keep runtime files out of its context.
+      build_context="$scratch/container-build"
+      mkdir -- "$build_context"
+      git --git-dir="$repository" archive --format=tar "$sha" | tar -xf - -C "$build_context"
+      cp -- "$build_context/Docker/Dockerfile.dockerignore" "$build_context/.dockerignore"
     fi
-    "${build_command[@]}" --file "$release_dir/Docker/Dockerfile" --tag "$IMAGE_REF" \
-      --label "org.opencontainers.image.revision=$sha" "$release_dir"
+    "${build_command[@]}" --file "$build_context/Docker/Dockerfile" --tag "$IMAGE_REF" \
+      --label "org.opencontainers.image.revision=$sha" "$build_context"
   fi
   service_preflight
   compose config --quiet

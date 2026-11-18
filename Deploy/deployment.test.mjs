@@ -61,7 +61,10 @@ fi
 if [[ "$1" == build ]]; then
   [[ ! -v KLAN_GIT_TOKEN ]] || { printf 'Git token leaked to build\\n' >&2; exit 97; }
   printf 'docker:build\\n' >> "$TEST_LOG"
-  if [[ "$2" == --network ]]; then printf 'build-network:%s:buildkit=%s\\n' "$3" "\${DOCKER_BUILDKIT:-}" >> "$TEST_LOG"; fi
+  if [[ "$2" == --network ]]; then
+    [[ -f "\${!#}/.dockerignore" && ! -e "\${!#}/runtime.env" ]] || exit 96
+    printf 'build-network:%s:buildkit=%s\\n' "$3" "\${DOCKER_BUILDKIT:-}" >> "$TEST_LOG"
+  fi
   [[ "$FAIL_BUILD" != yes ]] || exit 1
   touch "$TEST_IMAGE_MARKER-$TEST_SOURCE_SHA"
   if [[ "$ADVANCE_MAIN" == yes ]]; then git -C "$TEST_SOURCE" -c user.name=Test -c user.email=test@example.test commit --allow-empty -m 'Newer commit' >/dev/null; fi
@@ -96,6 +99,7 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
   write(join(source, 'Deploy', 'service.sh'), service);
   write(join(source, 'Docker', 'compose.production.yaml'), 'services: {}\n');
   write(join(source, 'Docker', 'Dockerfile'), 'FROM scratch\n');
+  write(join(source, 'Docker', 'Dockerfile.dockerignore'), '*\n');
   write(join(source, 'fixture-name'), 'new');
   write(join(source, 'tracked-source'), 'This file must come from git archive.\n');
   shell('git init -b main "$1" >/dev/null && git -C "$1" add . && git -C "$1" -c user.name=Test -c user.email=test@example.test commit -m Initial >/dev/null', [shellPath(source)]);
