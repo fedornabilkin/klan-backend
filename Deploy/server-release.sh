@@ -164,7 +164,16 @@ ASKPASS
     [[ "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE_REF")" == "$sha" ]] ||
       fail 'Existing local image does not match this commit'
   else
-    docker build --file "$release_dir/Docker/Dockerfile" --tag "$IMAGE_REF" \
+    build_command=(docker build)
+    network_file="$deploy_root/shared/build-network"
+    if [[ -e "$network_file" || -L "$network_file" ]]; then
+      [[ -f "$network_file" && ! -L "$network_file" ]] || fail 'Build network setting must be a regular file'
+      [[ "$(cat -- "$network_file")" == klan-build ]] || fail 'Build network must be klan-build'
+      docker network inspect klan-build >/dev/null || fail 'Missing isolated klan-build network'
+      # The Docker driver cannot select a custom build network with BuildKit.
+      build_command=(env DOCKER_BUILDKIT=0 docker build --network klan-build)
+    fi
+    "${build_command[@]}" --file "$release_dir/Docker/Dockerfile" --tag "$IMAGE_REF" \
       --label "org.opencontainers.image.revision=$sha" "$release_dir"
   fi
   service_preflight

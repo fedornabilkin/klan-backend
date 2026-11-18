@@ -52,6 +52,7 @@ function harness(context, { previous = true } = {}) {
   write(join(bin, 'docker'), `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == 'compose version --short' ]]; then printf '2.30.0\\n'; exit 0; fi
+if [[ "$*" == 'network inspect klan-build' ]]; then exit 0; fi
 if [[ "$1" == image && "$2" == inspect ]]; then
   if [[ "$*" == *--format* ]]; then printf '%s\\n' "$TEST_SOURCE_SHA"; exit 0; fi
   if [[ "$*" == *"klan-backend:$TEST_SOURCE_SHA" && ! -f "$TEST_IMAGE_MARKER-$TEST_SOURCE_SHA" && "$REUSE_IMAGE" != yes ]]; then exit 1; fi
@@ -60,6 +61,7 @@ fi
 if [[ "$1" == build ]]; then
   [[ ! -v KLAN_GIT_TOKEN ]] || { printf 'Git token leaked to build\\n' >&2; exit 97; }
   printf 'docker:build\\n' >> "$TEST_LOG"
+  if [[ "$2" == --network ]]; then printf 'build-network:%s:buildkit=%s\\n' "$3" "\${DOCKER_BUILDKIT:-}" >> "$TEST_LOG"; fi
   [[ "$FAIL_BUILD" != yes ]] || exit 1
   touch "$TEST_IMAGE_MARKER-$TEST_SOURCE_SHA"
   if [[ "$ADVANCE_MAIN" == yes ]]; then git -C "$TEST_SOURCE" -c user.name=Test -c user.email=test@example.test commit --allow-empty -m 'Newer commit' >/dev/null; fi
@@ -357,6 +359,15 @@ test('missing runtime configuration fails before build and leaves the active rel
   assert.equal(fixture.current(), `releases/${oldId}`);
   assert.deepEqual(fixture.hooks(), []);
   assert.ok(!fixture.log().includes('docker:build'));
+});
+
+test('API image builds can use an isolated bridge when default bridge egress is unavailable', { skip: unavailable }, (context) => {
+  const fixture = harness(context);
+  fixture.shared('build-network', 'klan-build\n');
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.ok(fixture.log().includes('build-network:klan-build:buildkit=0'));
+  assert.equal(fixture.current(), `releases/${fixture.newId}`);
 });
 
 test('private API binding remains independent of saved runtime env during rollback', { skip: unavailable }, (context) => {

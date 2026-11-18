@@ -18,6 +18,8 @@ sudo bash setup-server.sh
 
 Для подключения GitHub выполните на своём компьютере `bash setup-deployment.sh github`. Введите тот же HTTPS-адрес с портом, например `https://203.0.113.10:8443`. Для настройки одного репозитория добавьте `frontend`, `backend` или `bot`. GitHub Actions запускает проверки и выкладку после мержа в `main`. Для первого ручного выпуска дождитесь готовности API до запуска фронтенда и бота.
 
+Если стандартная сеть Docker не даёт сборке API доступ к npm, создайте отдельную сеть `docker network create --driver bridge klan-build` и запишите `klan-build` в `/opt/klan/backend/shared/build-network`. Этот режим использует классический сборщик Docker с изолированной сетью. Контейнеры после выпуска запускаются в своих штатных сетях.
+
 ## Справка для установки с доменом
 
 Для этого сценария сохраните [setup-deployment.sh](../Deploy/setup-deployment.sh) рядом с [setup-server.sh](../Deploy/setup-server.sh).
