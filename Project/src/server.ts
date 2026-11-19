@@ -36,7 +36,7 @@ const broadcast: Broadcast = message => {
   pendingMessages = [];
   flushScheduled = false;
   for (const socket of sockets.clients) if (socket.readyState === WebSocket.OPEN) {
-    void auth.userFromCookie(cookies.get(socket)).then(user => {
+    void auth.userFromCookie(cookies.get(socket), false).then(user => {
       if (!user) { socket.close(4001, 'Session expired'); return; }
       if (socket.readyState !== WebSocket.OPEN) return;
       if (socket.bufferedAmount > 1024 * 1024) socket.close(1013, 'Slow connection');
@@ -49,7 +49,7 @@ const { app, auth } = createApp(repo, config, broadcast);
 const server = createServer(app);
 server.on('upgrade', async (request, socket, head) => {
   try {
-    if (request.url !== '/ws' || request.headers.origin !== config.origin || !await auth.userFromCookie(request.headers.cookie)) {
+    if (request.url !== '/ws' || request.headers.origin !== config.origin || !await auth.userFromCookie(request.headers.cookie, false)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); socket.destroy(); return;
     }
     sockets.handleUpgrade(request, socket, head, client => { cookies.set(client, request.headers.cookie ?? ''); sockets.emit('connection', client, request); });
@@ -57,7 +57,7 @@ server.on('upgrade', async (request, socket, head) => {
 });
 sockets.on('connection', socket => { socket.on('error', () => socket.close()); socket.send(JSON.stringify({ type: 'connected' })); });
 const validation = setInterval(() => {
-  for (const socket of sockets.clients) void auth.userFromCookie(cookies.get(socket)).then(user => { if (!user) socket.close(4001, 'Session expired'); }).catch(() => socket.close(4001, 'Session unavailable'));
+  for (const socket of sockets.clients) void auth.userFromCookie(cookies.get(socket), false).then(user => { if (!user) socket.close(4001, 'Session expired'); }).catch(() => socket.close(4001, 'Session unavailable'));
 }, 30_000);
 validation.unref();
 server.listen(config.port, config.production ? '0.0.0.0' : '127.0.0.1', () => console.log(`KLAN API: http://localhost:${config.port}${config.demo ? ' (DEMO — isolated local data)' : ''}`));

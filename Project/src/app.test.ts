@@ -9,8 +9,49 @@ import { MemoryRepository } from './repository.js';
 import type { Config } from './config.js';
 import { hashToken } from './auth.js';
 import type { Activity } from './shared/contracts.js';
+import { accessForLevel } from './access.js';
+import type { CommunityPage, DatabaseState } from './repository.js';
 
 const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: ['-1001'], botInternalSecret: 'app-tests-service-secret-'.repeat(2), adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-1', demoAccessLevel: 'admin' };
+test('shared pages coalesce reads, negotiate gzip, invalidate on writes and respect live access', async t => {
+  const seed = createSeed();
+  const member = seed.users[1]!;
+  member.role = 'member';
+  member.access = accessForLevel('member', 'telegram');
+  const token = 'a'.repeat(64);
+  seed.telegramUsers['123456'] = member.id;
+  seed.sessions[hashToken(token)] = { userId: member.id, source: 'telegram', expiresAt: new Date(Date.now() + 60_000).toISOString() };
+  seed.tags.push(...Array.from({ length: 80 }, (_, i) => ({ id: 'cache-' + i, name: 'Тестовый тег ' + i })));
+  const draft = { ...seed.entities[0]!, id: 'private-team', type: 'teams' as const, status: 'draft' };
+  seed.entities.push(draft);
+  class CountingRepository extends MemoryRepository {
+    reads = 0;
+    readPage<T>(_page: CommunityPage, fn: (state: DatabaseState) => T) { this.reads++; return this.read(fn); }
+  }
+  const repo = new CountingRepository(seed);
+  const { app } = createApp(repo, { ...config, telegramGroupMembershipRequired: false });
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
+  const login = await fetch(base + '/auth/demo', { method: 'POST', headers: { origin: config.origin, 'content-type': 'application/json' }, body: '{}' });
+  const admin = login.headers.getSetCookie()[0]!.split(';')[0]!;
+  const cookie = 'klan_session=' + token;
+  const get = (path: string, session: string, encoding = 'identity') => fetch(base + path, { headers: { cookie: session, 'accept-encoding': encoding } });
+  const [plain, zipped] = await Promise.all([get('/tags', cookie), get('/tags', cookie, 'gzip')]);
+  assert.equal(repo.reads, 1);
+  assert.equal(plain.headers.get('content-encoding'), null);
+  assert.equal(zipped.headers.get('content-encoding'), 'gzip');
+  assert.match(zipped.headers.get('vary')!, /Accept-Encoding/i);
+  assert.equal(zipped.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await plain.json(), await zipped.json());
+  const teamIds = async (session: string) => (await (await get('/stats', session)).json()).data.teams.map((team: {id: string}) => team.id);
+  assert.ok((await teamIds(admin)).includes(draft.id));
+  assert.ok(!(await teamIds(cookie)).includes(draft.id));
+  await repo.write(state => { state.tags.push({ id: 'updated', name: 'Добавлен' }); });
+  assert.ok((await (await get('/tags', cookie)).json()).data.some((tag: {id: string}) => tag.id === 'updated'));
+  await repo.write(state => { delete state.sessions[hashToken(token)]; });
+  assert.equal((await get('/tags', cookie)).status, 401);
+});
 test('API auth, CSRF, catalog writes, profile, admin CRUD, errors, export and filters', async t => {
   const repo = new MemoryRepository(createSeed());
   const activities: Activity[] = [];

@@ -2,13 +2,15 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import express, { type ErrorRequestHandler, type Request } from 'express';
 import compression from 'compression';
+import { constants as zlib } from 'node:zlib';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { Activity, Entity, Resource, User } from './shared/contracts.js';
 import type { Config } from './config.js';
-import type { DatabaseState, Repository } from './repository.js';
-import { profileEntryText } from './shared/profile-entries.js';
+import type { CommunityPage, DatabaseState, Repository } from './repository.js';
+import { dashboardCards, statistics } from './community-reads.js';
+import { pageResponses } from './page-cache.js';
 import { userPath } from './shared/user-links.js';
 import { createAuth, type AuthDependencies } from './auth.js';
 import { createBotIngress } from './bot-ingress.js';
@@ -29,7 +31,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.use(helmet({ contentSecurityPolicy: config.production ? {
     directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'https:'], connectSrc: ["'self'", 'wss:'], fontSrc: ["'self'", 'data:'], objectSrc: ["'none'"], frameAncestors: ["'none'"] },
   } : false, crossOriginEmbedderPolicy: false }));
-  app.use(compression());
+  app.use(compression({ level: 1, brotli: { params: { [zlib.BROTLI_PARAM_QUALITY]: 2 } } }));
   app.use(express.json({ limit: '256kb' }));
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use('/api', (req, _res, next) => {
@@ -83,8 +85,13 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   };
   const entityTarget = (entity: Entity) => ({ title: entity.title, path: `/${entity.type}/${entity.id}` });
 
-  app.get('/api/tags', async (_req, res) => res.json({ data: await repo.read(state => state.tags.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))) }));
-  app.get('/api/items', async (_req, res) => res.json({ data: await repo.read(state => state.items.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))) }));
+  const sendPage = pageResponses(repo);
+  const readPage = <T>(page: CommunityPage, fn: (state: DatabaseState) => T, at = new Date()) =>
+    repo.readPage ? repo.readPage(page, fn, at) : repo.read(fn);
+  for (const catalog of ['tags', 'items'] as const) {
+    app.get(`/api/${catalog}`, (req, res) => sendPage(req, res, catalog, () =>
+      readPage(catalog, state => state[catalog].slice().sort((a, b) => a.name.localeCompare(b.name, 'ru')))));
+  }
   for (const collection of ['tags', 'items'] as const) {
     app.post(`/api/${collection}`, async (req, res) => {
       const result = await mutate(req.user!, collection, collection === 'tags' ? 'добавил тег' : 'добавил предмет', state => findOrCreateCatalogEntry(state, collection, req.body));
@@ -119,9 +126,11 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   });
   app.get('/api/geography', async (req, res) => {
     const params = query(req);
-    res.json({ data: await repo.read(state => {
+    const unfiltered = !params.q && !params.tag && !params.city && !params.category && !params.status && params.sort === '-createdAt';
+    await sendPage(req, res, unfiltered ? 'geography' : undefined, async () => {
+      const users = repo.geographyUsers ? await repo.geographyUsers() : await repo.read(state => state.users);
       const cities = new Map<string, { id: string; city: string; country: string; lat: number; lng: number; count: number; users: Pick<User, 'id' | 'publicId' | 'name' | 'initials' | 'color'>[] }>();
-      for (const user of filtered(state.users, params)) {
+      for (const user of filtered(users, params)) {
         const { lat, lng } = user.location;
         const city = user.location.city.trim(), country = user.location.country.trim();
         if (!city || typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90
@@ -129,37 +138,33 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
         const key = `${country}:${city}`.toLocaleLowerCase('ru');
         const point = cities.get(key) ?? { id: key, city, country, lat, lng, count: 0, users: [] };
         point.count++;
-        if (point.users.length < 5) point.users.push({ id: user.id, publicId: user.publicId, name: user.name, initials: user.initials, color: user.color });
+        if (point.users.length < 5) point.users.push({ id: user.id, publicId: user.publicId ?? undefined, name: user.name, initials: user.initials, color: user.color });
         cities.set(key, point);
       }
       return [...cities.values()];
-    }) });
+    });
   });
   app.get('/api/dashboard', async (req, res) => {
-    res.json({ data: await repo.read(raw => {
+    const now = new Date();
+    const scope = hasCapability(req.user, 'content.manage') ? 'all' : 'published';
+    await sendPage(req, res, `dashboard-${scope}`, () => readPage('dashboard', raw => {
       const state = visibleState(raw, req.user!);
-      const now = new Date();
-      const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-      const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
-      const inMonth = (entity: Entity) => entity.schedule && Date.parse(entity.schedule.start) < end && Date.parse(entity.schedule.end) >= start;
-      const events = state.entities.filter(entity => entity.type === 'events' && inMonth(entity) && !['draft', 'archived'].includes(entity.status)).sort((a, b) => a.schedule!.start.localeCompare(b.schedule!.start));
-      const challenges = state.entities.filter(entity => entity.type === 'challenges' && inMonth(entity) && entity.status === 'active');
-      const teams = state.entities.filter(entity => entity.type === 'teams' && entity.status === 'active');
+      const cards = dashboardCards(state.entities, now);
       const mapUsers = state.users.filter(({ location }) => location.city.trim()
         && typeof location.lat === 'number' && Number.isFinite(location.lat) && location.lat >= -90 && location.lat <= 90
         && typeof location.lng === 'number' && Number.isFinite(location.lng) && location.lng >= -180 && location.lng <= 180);
-      return { stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, events: events.length, challenges: challenges.length, teams: teams.length },
-        events: events.filter(event => Date.parse(event.schedule!.end) >= now.getTime()).slice(0, 4).map(e => hydrateEntity(state, e)), challenges: challenges.slice(0, 3).map(e => hydrateEntity(state, e)), teams: teams.slice(0, 4).map(e => hydrateEntity(state, e)), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20) };
-    }) });
+      return { stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, ...cards.counts },
+        events: cards.events.map(e => hydrateEntity(state, e)), challenges: cards.challenges.map(e => hydrateEntity(state, e)), teams: cards.teams.map(e => hydrateEntity(state, e)), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20) };
+    }, now));
   });
   app.get('/api/stats', async (req, res) => {
-    res.json({ data: await repo.read(raw => {
+    const includeDrafts = hasCapability(req.user, 'content.manage');
+    await sendPage(req, res, `stats-${includeDrafts ? 'all' : 'published'}`, () => repo.statistics ? repo.statistics(includeDrafts) : repo.read(raw => {
       const state = visibleState(raw, req.user!);
-      const counts = (values: string[]) => [...values.reduce((map, name) => map.set(name, (map.get(name) ?? 0) + 1), new Map<string, number>())].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-      return { users: state.users.length, cities: counts(state.users.map(u => u.location.city.trim()).filter(Boolean)), interests: counts(state.users.flatMap(u => u.tags.map(t => t.name))),
-        teams: state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, title: e.title, count: e.participants.length })), achievements: counts(state.users.flatMap(u => u.achievements.map(profileEntryText))),
-        activity: counts(state.activities.map(a => a.createdAt.slice(0, 10))).map(({ name, count }) => ({ date: name, count })).sort((a, b) => a.date.localeCompare(b.date)), };
-    }) });
+      return statistics(state.users.map(u => ({ city: u.location.city, tags: u.tags, achievements: u.achievements })),
+        state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, title: e.title, count: e.participants.length })),
+        state.activities.map(a => a.createdAt.slice(0, 10)));
+    }));
   });
   app.post('/api/:resource/:id/join', async (req, res) => {
     const collection = resource(req);

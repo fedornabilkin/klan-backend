@@ -216,6 +216,23 @@ test('Demo access defaults to member and cannot elevate a Telegram session', asy
   } finally { await f.close(); }
 });
 
+test('equivalent access returned in JSONB key order does not write the profile during reads', async () => {
+  const f = await fixture({ botInternalSecret: serviceSecret, telegramGroupMembershipRequired: false });
+  try {
+    const token = '9'.repeat(64);
+    await f.repo.write(state => {
+      const user = state.users[0]!;
+      user.role = 'member';
+      user.access = { source: 'telegram', level: 'member', capabilities: ['community.read'] };
+      state.telegramUsers['43210'] = user.id;
+      state.sessions[hashToken(token)] = { userId: user.id, expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    });
+    const revision = f.repo.revision;
+    assert.equal((await f.auth.userFromCookie('klan_session=' + token))?.role, 'member');
+    assert.equal(f.repo.revision, revision);
+  } finally { await f.close(); }
+});
+
 test('Session expiry and fabricated cookies cannot authenticate', async () => {
   const f = await fixture();
   try {

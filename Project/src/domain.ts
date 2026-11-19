@@ -72,19 +72,23 @@ export const querySchema = z.object({
 });
 export type Query = z.infer<typeof querySchema>;
 
-export function hydrateUser(state: DatabaseState, user: User): User {
+export function profileWithMemberships(user: User, activeTeams: NonNullable<User['activeTeams']>, stats: User['stats']): User {
   // Import provenance includes an authentication identity and stays server-side.
   const { communityImport: _communityImport, historicalImport: _historicalImport, ...profile } = user as User & { communityImport?: unknown; historicalImport?: unknown };
   return { ...profile,
-    activeTeams: state.entities.filter(team => team.type === 'teams' && team.status === 'active' && team.participants.some(participant => participant.user.id === user.id))
-      .map(team => ({ id: team.id, title: team.title, description: team.description, memberCount: new Set(team.participants.map(participant => participant.user.id)).size })),
+    activeTeams, stats,
     facts: normalizeProfileEntries(user.facts, `${user.id}:facts`),
     achievements: normalizeProfileEntries(user.achievements, `${user.id}:achievements`),
-    stats: {
+  };
+}
+export function hydrateUser(state: DatabaseState, user: User): User {
+  const teams = state.entities.filter(team => team.type === 'teams' && team.status === 'active' && team.participants.some(participant => participant.user.id === user.id))
+    .map(team => ({ id: team.id, title: team.title, description: team.description, memberCount: new Set(team.participants.map(participant => participant.user.id)).size }));
+  return profileWithMemberships(user, teams, {
     events: state.entities.filter(e => e.type === 'events' && e.participants.some(p => p.user.id === user.id)).length,
     challenges: state.entities.filter(e => e.type === 'challenges' && e.participants.some(p => p.user.id === user.id)).length,
     books: state.entities.filter(e => e.type === 'books' && e.readers?.some(reader => reader.id === user.id)).length,
-  } };
+  });
 }
 export function hydrateEntity(state: DatabaseState, entity: Entity): Entity {
   // A month's daily results can reference the same participant thousands of times.
@@ -125,26 +129,32 @@ export function visibleState(state: DatabaseState, actor: User): DatabaseState {
 }
 export function requireAdmin(actor: User) { if (actor.role !== 'admin') throw forbidden(); }
 
-function searchText(record: User | Entity) {
+export type SearchUser = Pick<User, 'id' | 'name' | 'username' | 'callsign' | 'bio' | 'location' | 'interests' | 'facts' | 'achievements' | 'tags' | 'joinedAt'>;
+function searchText(record: SearchUser | Entity) {
   return 'name' in record
     ? [record.name, record.username, record.callsign, record.bio, record.location.city, record.location.country, ...record.interests, ...record.facts.map(profileEntryText), ...record.achievements.map(profileEntryText), ...record.tags.map(t => t.name)].join(' ')
     : [record.title, record.description, record.category, record.location?.city, ...record.tags.map(t => t.name)].join(' ');
 }
-export function filtered<T extends User | Entity>(rows: T[], query: Query): T[] {
+export function filtered<T extends SearchUser | Entity>(rows: T[], query: Query): T[] {
   const tags = query.tag?.split(',').filter(Boolean) ?? [];
   const terms = query.q.toLocaleLowerCase('ru').trim().split(/\s+/).filter(Boolean);
-  return rows.filter(row => terms.every(term => searchText(row).toLocaleLowerCase('ru').includes(term)))
+  return rows.filter(row => {
+    if (!terms.length) return true;
+    const text = searchText(row).toLocaleLowerCase('ru');
+    return terms.every(term => text.includes(term));
+  })
     .filter(row => !query.status || ('status' in row && row.status === query.status))
     .filter(row => !query.category || ('category' in row && row.category === query.category))
     .filter(row => !query.city || row.location?.city.toLocaleLowerCase('ru') === query.city.toLocaleLowerCase('ru'))
     .filter(row => tags.every(tag => row.tags.some(t => t.id === tag || t.name.toLocaleLowerCase('ru') === tag.toLocaleLowerCase('ru'))))
     .sort((a, b) => {
       const key = query.sort.replace('-', '');
-      const value = (row: User | Entity) => key === 'name' ? ('name' in row ? row.name : row.title) : ('joinedAt' in row ? row.joinedAt : row.createdAt);
-      const order = value(a).localeCompare(value(b), 'ru', { numeric: true });
+      const value = (row: SearchUser | Entity) => key === 'name' ? ('name' in row ? row.name : row.title) : ('joinedAt' in row ? row.joinedAt : row.createdAt);
+      const order = naturalRussian.compare(value(a), value(b));
       return (query.sort.startsWith('-') ? -order : order) || a.id.localeCompare(b.id);
     });
 }
+const naturalRussian = new Intl.Collator('ru', { numeric: true });
 export function paginate<T>(rows: T[], query: Pick<Query, 'page' | 'limit'>) {
   return { data: rows.slice((query.page - 1) * query.limit, query.page * query.limit), meta: { page: query.page, limit: query.limit, total: rows.length, pages: Math.max(1, Math.ceil(rows.length / query.limit)) } };
 }

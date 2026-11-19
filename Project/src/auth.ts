@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { Router, type RequestHandler, type Response } from 'express';
 import type { User } from './shared/contracts.js';
 import type { Config } from './config.js';
@@ -140,11 +141,11 @@ export function createAuth(
     return { ...user, role: level, access: accessForLevel(level, 'demo') };
   }
 
-  async function userFromCookie(cookie?: string): Promise<User | undefined> {
+  async function userFromCookie(cookie?: string, withProfile = true): Promise<User | undefined> {
     const token = readCookie(cookie, sessionCookie);
     if (!token || !/^[a-f0-9]{64}$/.test(token)) return undefined;
     const sessionKey = hashToken(token);
-    const value = await repo.read((state) => {
+    const value = repo.readSession ? await repo.readSession(sessionKey, now(), withProfile) : await repo.read((state) => {
       const session = state.sessions[sessionKey];
       if (!session || Date.parse(session.expiresAt) <= now()) return undefined;
       const user = state.users.find((candidate) => candidate.id === session.userId);
@@ -162,13 +163,13 @@ export function createAuth(
       return undefined;
     }
     const role = access.level === 'admin' ? 'admin' : 'member';
-    if (value.user.role !== role || JSON.stringify(value.user.access) !== JSON.stringify(access)) return synchronizeAccess(value.user.id, access);
+    if (value.user.role !== role || !isDeepStrictEqual(value.user.access, access)) return synchronizeAccess(value.user.id, access);
     return { ...value.user, role, access };
   }
 
   const requireAuth: RequestHandler = async (req, res, next) => {
     try {
-      const user = await userFromCookie(req.headers.cookie);
+      const user = await userFromCookie(req.headers.cookie, !['GET', 'HEAD'].includes(req.method) || req.path === '/me');
       if (!user) {
         res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Войдите через Telegram, чтобы продолжить.' } });
         return;
@@ -269,18 +270,29 @@ export function createAuth(
       if (!/^[a-f0-9]{48}$/.test(id) || !browserToken) {
         throw failure(400, 'INVALID_LOGIN', 'Откройте вход в этом браузере заново.');
       }
-      const approvedUser = await repo.write((state) => {
-        const request = state.authRequests[id];
-        if (!request || Date.parse(request.expiresAt) <= now()) {
-          delete state.authRequests[id];
-          return 'expired' as const;
-        }
-        if (!equalHash(request.browserHash, hashToken(browserToken))) {
+      const browserHash = hashToken(browserToken);
+      function status(request?: DatabaseState['authRequests'][string]) {
+        if (!request || Date.parse(request.expiresAt) <= now()) return 'expired' as const;
+        if (!equalHash(request.browserHash, browserHash)) {
           throw failure(403, 'BROWSER_MISMATCH', 'Запрос входа принадлежит другому браузеру.');
         }
         if (request.status === 'denied' || request.status === 'rejected') return request.status;
         if (request.status !== 'approved' || !request.userId) return 'pending' as const;
-        const user = state.users.find((candidate) => candidate.id === request.userId);
+        return 'approved' as const;
+      }
+      if (repo.authRequest) {
+        const current = status(await repo.authRequest(id));
+        if (current !== 'approved') {
+          res.json({ data: { status: current } });
+          return;
+        }
+      }
+      const approvedUser = await repo.write((state) => {
+        const request = state.authRequests[id];
+        const current = status(request);
+        if (current === 'expired') delete state.authRequests[id];
+        if (current !== 'approved') return current;
+        const user = state.users.find((candidate) => candidate.id === request!.userId);
         delete state.authRequests[id]; // Atomic consume: concurrent polling cannot replay approval.
         if (!user) return 'expired' as const;
         return hydrateUser(state, user);
