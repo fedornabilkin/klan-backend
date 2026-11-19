@@ -45,3 +45,13 @@ sudo bash setup-server.sh
 | Бот | Остановите старый worker, перенесите том `klan-production-bot-state` с позицией чтения и используйте прежние токен и секрет API. Укажите частный адрес API, например `http://10.0.0.5:3101`. |
 
 Для возврата предыдущего API выполните от `deploy` команду `bash /opt/klan/backend/current/Deploy/server-release.sh rollback`. Дампы PostgreSQL перед обновлениями лежат в `/opt/klan/backend/backups`. Восстановление базы выполняется отдельно.
+
+## Перенос проверенной октябрьской базы с Windows
+
+Из корня репозитория backend выполните в PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Scripts\publish-reviewed-data.ps1 -Apply
+```
+
+Без `-Apply` команда только проверяет локальную `klan_demo`. При переносе API кратковременно останавливается. Скрипт сохраняет полный дамп прежней базы в `/opt/klan/backend/backups/`, заменяет данные одной транзакцией и проверяет доступность API. Переносятся все постоянные записи, включая привязки Telegram. После замены пользователи входят заново. Повторный запуск с той же выгрузкой покажет путь к сохранённой копии.
