@@ -6,7 +6,7 @@ import type { Repository } from './repository.js';
 const compress = promisify(gzip);
 type Body = { json: string; gzip?: Promise<Buffer> };
 type Entry = { expires: number; body: Promise<Body> };
-type PageKey = 'tags' | 'items' | 'geography' | `${'stats' | 'dashboard'}-${'all' | 'published'}`;
+type PageKey = 'tags' | 'tag-usage' | 'items' | 'geography' | `${'stats' | 'dashboard' | 'dashboard-cards'}-${'all' | 'published'}`;
 
 /** Called after authentication. Only the fixed, shared views can occupy cache slots. */
 export function pageResponses(repo: Repository) {

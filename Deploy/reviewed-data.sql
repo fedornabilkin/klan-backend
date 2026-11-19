@@ -3,7 +3,7 @@
 -- psql reads and writes COPY text directly, preserving UTF-8 and JSON escaping.
 CREATE TEMP VIEW reviewed_rows (relation, body) AS
   SELECT 'klan_users', to_jsonb(t) FROM public.klan_users t
-  UNION ALL SELECT 'klan_entities', to_jsonb(t) FROM public.klan_entities t
+  UNION ALL SELECT 'klan_entities', jsonb_build_object('id',t.id,'kind',t.kind,'data',t.data) FROM public.klan_entities t
   UNION ALL SELECT 'klan_tags', to_jsonb(t) FROM public.klan_tags t
   UNION ALL SELECT 'klan_items', to_jsonb(t) FROM public.klan_items t
   UNION ALL SELECT 'klan_activities', to_jsonb(t) FROM public.klan_activities t
@@ -23,7 +23,7 @@ DO $$
 BEGIN
   IF (SELECT array_agg(tablename::text ORDER BY tablename) FROM pg_tables WHERE schemaname = 'public')
      IS DISTINCT FROM ARRAY['klan_activities','klan_auth','klan_entities','klan_items','klan_migrations','klan_tags','klan_users']
-     OR (SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IS DISTINCT FROM ARRAY[1] THEN
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2]), false) THEN
     RAISE EXCEPTION 'Unexpected Klan schema or migration version';
   END IF;
 END $$;
@@ -39,10 +39,18 @@ DO $$
 DECLARE target text;
 BEGIN
   PERFORM pg_advisory_xact_lock(54652602);
+  IF (SELECT array_agg((body->>'version')::integer ORDER BY (body->>'version')::integer) FROM reviewed_input WHERE relation='klan_migrations')
+     IS DISTINCT FROM (SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) THEN
+    RAISE EXCEPTION 'Update both databases to the same migration version before import';
+  END IF;
   TRUNCATE public.klan_users, public.klan_entities, public.klan_tags, public.klan_items,
            public.klan_activities, public.klan_migrations, public.klan_auth;
   FOREACH target IN ARRAY ARRAY['klan_users','klan_entities','klan_tags','klan_items','klan_activities','klan_migrations','klan_auth']
   LOOP
+    IF target='klan_entities' THEN
+      INSERT INTO public.klan_entities(id,kind,data) SELECT body->>'id',body->>'kind',body->'data' FROM reviewed_input WHERE relation=target;
+      CONTINUE;
+    END IF;
     EXECUTE format('INSERT INTO public.%1$I SELECT (jsonb_populate_record(NULL::public.%1$I, body)).* FROM pg_temp.reviewed_input WHERE relation = $1', target)
       USING target;
   END LOOP;
@@ -62,7 +70,7 @@ BEGIN
      OR (SELECT count(*) FROM public.klan_entities WHERE kind='challenges') <> 1
      OR NOT EXISTS (SELECT FROM public.klan_entities WHERE kind='challenges' AND id='history-challenge-f24c7cb336799a547084efb9')
      OR (SELECT count(*) FROM public.klan_auth WHERE kind='telegramUsers') <> 451
-     OR (SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IS DISTINCT FROM ARRAY[1] THEN
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2]), false) THEN
     RAISE EXCEPTION 'Data does not match the reviewed October dataset';
   END IF;
 END $$;

@@ -38,11 +38,11 @@ export function statistics(users: StatisticsUser[], teams: Statistics['teams'], 
 export async function readStatistics(db: PoolClient, includeDrafts: boolean): Promise<Statistics> {
   const users = await db.query<StatisticsUser>(`SELECT data#>>'{location,city}' AS city, data->'tags' AS tags,
     data->'achievements' AS achievements FROM klan_users ORDER BY id`);
-  const teams = await db.query<Statistics['teams'][number]>(`SELECT id, data->>'title' AS title,
+  const teams = await db.query<Statistics['teams'][number]>(`SELECT id, (data->>'publicId')::double precision AS "publicId", data->>'title' AS title,
     jsonb_array_length(data->'participants') AS count FROM klan_entities
     WHERE kind = 'teams' AND ($1 OR data->>'status' IS DISTINCT FROM 'draft') ORDER BY id`, [includeDrafts]);
   const activity = await db.query<{day: string}>(`SELECT left(data->>'createdAt', 10) AS day FROM klan_activities a
     WHERE $1 OR NOT EXISTS (SELECT 1 FROM klan_entities e WHERE e.data->>'status' = 'draft'
-      AND a.data#>>'{target,path}' = '/' || e.kind || '/' || e.id)`, [includeDrafts]);
+      AND a.data#>>'{target,path}' IN ('/' || e.kind || '/' || e.id, '/' || e.kind || '/' || (e.card->>'publicId')))`, [includeDrafts]);
   return statistics(users.rows, teams.rows, activity.rows.map(row => row.day));
 }

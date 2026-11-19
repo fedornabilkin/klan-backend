@@ -41,8 +41,8 @@ ssh_options=(-F /dev/null -i "$scratch/key" -p "$DEPLOY_PORT" -o IdentitiesOnly=
   -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$scratch/known_hosts" -o GlobalKnownHostsFile=/dev/null)
 ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
   "test \"\$(realpath '$deploy_root')\" = '$deploy_root' && test -w '$deploy_root/incoming' && test -w '$deploy_root/releases' && umask 077 && mkdir '$remote' && test \"\$(realpath '$remote')\" = '$remote'"
-tar -C "$scratch/payload" -cf - . | ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-  "umask 077; tar -xf - -C '$remote'"
+tar -C "$scratch/payload" -czf - . | ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+  "umask 077; tar -xzf - -C '$remote'"
 # The repository-scoped token goes through stdin, never an SSH argument or Git URL.
 printf '%s\n' "$GIT_TOKEN" | ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
   "bash '$remote/Deploy/server-release.sh' deploy"

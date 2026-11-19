@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Activity, Entity, User } from './shared/contracts.js';
 import type { AnalyticsChallenge, AnalyticsCount, AnalyticsMember, AnalyticsMembers, AnalyticsParticipation, AnalyticsRange, CommunityAnalytics, MemberAnalytics } from './shared/analytics.js';
 import type { DatabaseState, Repository } from './repository.js';
-import { getUser, paginate } from './domain.js';
+import { getUser, paginate, publicActivity } from './domain.js';
 import { HttpError } from './errors.js';
 import { requireCapability } from './access.js';
 
@@ -72,30 +72,50 @@ function completeness(user: User): number {
   return Math.round(fields.filter(field => field.filled).length / fields.length * 100);
 }
 
-function memberRow(state: DatabaseState, user: User, range: AnalyticsRange, activities: Activity[]): AnalyticsMember {
-  const ownActivities = activities.filter(activity => activity.actor.id === user.id);
+function memberIndex(state: DatabaseState, range: AnalyticsRange, activities: Activity[]) {
+  const own = new Map<string,Activity[]>(), results = new Map<string,number>();
+  const current = new Map<string,{events:number;challenges:number;teams:number;books:number}>();
+  for (const activity of activities) {
+    const rows = own.get(activity.actor.id);
+    if (rows) rows.push(activity); else own.set(activity.actor.id,[activity]);
+  }
+  for (const entity of state.entities) {
+    const kind = entity.type;
+    if (kind !== 'events' && kind !== 'challenges' && kind !== 'teams' && kind !== 'books') continue;
+    const ids = kind === 'books' ? entity.readers?.map(u => u.id) : entity.participants.map(p => p.user.id);
+    for (const id of new Set(ids)) {
+      const counts = current.get(id) ?? {events:0,challenges:0,teams:0,books:0};
+      counts[kind]++;
+      current.set(id,counts);
+    }
+    if (kind === 'challenges') for (const r of entity.results ?? []) {
+      if (inRange(r.date,range)) results.set(r.user.id,(results.get(r.user.id) ?? 0)+1);
+    }
+  }
+  return {own,results,current};
+}
+function memberRow(index: ReturnType<typeof memberIndex>, user: User, range: AnalyticsRange): AnalyticsMember {
+  const ownActivities = index.own.get(user.id) ?? [];
   const period = ownActivities.filter(activity => inRange(activity.createdAt, range));
-  const current = (type: Entity['type']) => state.entities.filter(entity => entity.type === type && entity.participants.some(participant => participant.user.id === user.id)).length;
   const { id, publicId, name, initials, color, role, joinedAt, location } = user;
   return {
     user: { id, publicId, name, initials, color, role, joinedAt, location },
     period: {
       actions: period.length,
       activeDays: new Set(period.map(activity => utcDay(activity.createdAt))).size,
-      resultEntries: state.entities.filter(entity => entity.type === 'challenges').flatMap(entity => entity.results ?? []).filter(result => result.user.id === user.id && inRange(result.date, range)).length,
+      resultEntries: index.results.get(id) ?? 0,
     },
     lastRecordedActivity: ownActivities.slice().sort(byRecent)[0]?.createdAt ?? null,
     profileCompleteness: completeness(user),
     current: {
-      events: current('events'), challenges: current('challenges'), teams: current('teams'),
-      books: state.entities.filter(entity => entity.type === 'books' && entity.readers?.some(reader => reader.id === user.id)).length,
+      ...(index.current.get(id) ?? {events:0,challenges:0,teams:0,books:0}),
       achievements: user.achievements.length,
     },
   };
 }
 
 function participation(entity: Entity): AnalyticsParticipation {
-  return { id: entity.id, title: entity.title, status: entity.status, participants: new Set(entity.participants.map(participant => participant.user.id)).size, start: entity.schedule?.start, end: entity.schedule?.end };
+  return { id: entity.id, ...(entity.publicId && { publicId: entity.publicId }), title: entity.title, status: entity.status, participants: new Set(entity.participants.map(participant => participant.user.id)).size, start: entity.schedule?.start, end: entity.schedule?.end };
 }
 
 /** Challenge sums always stay attached to a single challenge and unit. */
@@ -103,7 +123,7 @@ function challenge(entity: Entity, range: AnalyticsRange, userId?: string): Anal
   const results = (entity.results ?? []).filter(result => userId === undefined || result.user.id === userId);
   const period = results.filter(result => inRange(result.date, range));
   return {
-    id: entity.id, title: entity.title, unit: entity.goal?.unit ?? 'ед.',
+    id: entity.id, ...(entity.publicId && { publicId: entity.publicId }), title: entity.title, unit: entity.goal?.unit ?? 'ед.',
     participants: new Set(entity.participants.map(participant => participant.user.id)).size,
     periodEntries: period.length, periodContributors: new Set(period.map(result => result.user.id)).size,
     periodValue: period.reduce((sum, result) => sum + result.value, 0),
@@ -119,6 +139,13 @@ export function communityAnalytics(state: DatabaseState, range: AnalyticsRange):
   const newMembers = state.users.filter(user => inRange(user.joinedAt, range));
   const results = state.entities.filter(entity => entity.type === 'challenges').flatMap(entity => entity.results ?? []).filter(result => inRange(result.date, range));
   const dates = Array.from({ length: range.days }, (_, index) => new Date(Date.parse(`${range.from}T00:00:00Z`) + index * dayMs).toISOString().slice(0, 10));
+  const daily = new Map(dates.map(date => [date,{actions:0,actors:new Set<string>(),newMembers:0}]));
+  for (const activity of period) {
+    const row = daily.get(utcDay(activity.createdAt))!;
+    row.actions++;
+    if (currentMemberIds.has(activity.actor.id)) row.actors.add(activity.actor.id);
+  }
+  for (const user of newMembers) daily.get(utcDay(user.joinedAt))!.newMembers++;
   const chronological = activities.slice().sort(byRecent);
   const entities = (type: Entity['type']) => state.entities.filter(entity => entity.type === type);
   const places = state.users.filter(user => user.location.city.trim());
@@ -140,10 +167,7 @@ export function communityAnalytics(state: DatabaseState, range: AnalyticsRange):
       bookReadMarks: entities('books').reduce((sum, entity) => sum + new Set(entity.readers?.map(reader => reader.id) ?? []).size, 0),
       averageProfileCompleteness: state.users.length ? Math.round(state.users.reduce((sum, user) => sum + completeness(user), 0) / state.users.length) : 0,
     },
-    daily: dates.map(date => {
-      const today = period.filter(activity => utcDay(activity.createdAt) === date);
-      return { date, actions: today.length, activeMembers: new Set(today.map(activity => activity.actor.id).filter(id => currentMemberIds.has(id))).size, newMembers: newMembers.filter(user => utcDay(user.joinedAt) === date).length };
-    }),
+    daily: [...daily].map(([date,row]) => ({date,actions:row.actions,activeMembers:row.actors.size,newMembers:row.newMembers})),
     actions: grouped(period.map(activity => activity.action)),
     geography: grouped(places.map(user => [user.location.city, user.location.country].filter(Boolean).join(', '))),
     interests: grouped(state.users.flatMap(user => [...new Map(user.tags.map(tag => [tag.id, tag.name])).values()])),
@@ -156,10 +180,11 @@ export function communityAnalytics(state: DatabaseState, range: AnalyticsRange):
 export function membersAnalytics(state: DatabaseState, range: AnalyticsRange, input: unknown): AnalyticsMembers {
   const query = membersSchema.parse(input);
   const activities = validActivities(state);
+  const index = memberIndex(state,range,activities);
   const terms = query.q.toLocaleLowerCase('ru').split(/\s+/).filter(Boolean);
   const rows = state.users
     .filter(user => terms.every(term => [user.name, user.username, user.location.city, user.location.country].join(' ').toLocaleLowerCase('ru').includes(term)))
-    .map(user => memberRow(state, user, range, activities))
+    .map(user => memberRow(index, user, range))
     .filter(row => query.activity === 'all' || (query.activity === 'active' ? row.period.actions > 0 : row.period.actions === 0));
   rows.sort((a, b) => {
     const compared = query.sort === 'name' ? a.user.name.localeCompare(b.user.name, 'ru')
@@ -180,32 +205,34 @@ export function memberAnalytics(state: DatabaseState, userId: string, range: Ana
   const participationEntities = state.entities.filter(entity => entity.participants.some(participant => participant.user.id === user.id)
     || (entity.type === 'books' && entity.readers?.some(reader => reader.id === user.id)));
   return {
-    range, member: memberRow(state, user, range, activities), profileFields: analyticsProfileFields(user),
-    participation: participationEntities.map(entity => ({ id: entity.id, type: entity.type, title: entity.title, status: entity.status, start: entity.schedule?.start, end: entity.schedule?.end })),
+    range, member: memberRow(memberIndex(state, range, activities), user, range), profileFields: analyticsProfileFields(user),
+    participation: participationEntities.map(entity => ({ id: entity.id, ...(entity.publicId && { publicId: entity.publicId }), type: entity.type, title: entity.title, status: entity.status, start: entity.schedule?.start, end: entity.schedule?.end })),
     challenges: state.entities.filter(entity => entity.type === 'challenges' && (entity.participants.some(participant => participant.user.id === user.id) || entity.results?.some(result => result.user.id === user.id))).map(entity => challenge(entity, range, user.id)),
     actions: grouped(period.map(activity => activity.action)),
-    activity: paginate(period, { page: query.activityPage, limit: query.activityLimit }),
+    activity: paginate(period.map(a => publicActivity(state,a)), { page: query.activityPage, limit: query.activityLimit }),
   };
 }
 
 /** Mount after auth.requireAuth at /api/admin/analytics, before generic resource routes. */
 export function createAnalyticsRouter(repo: Repository): Router {
   const router = Router();
+  const read = <T>(fn: (state: DatabaseState) => T, member?: string) => repo.readAnalytics ? repo.readAnalytics(fn,member) : repo.read(fn);
   router.use((req, _res, next) => {
     if (!req.user) throw new HttpError(401, 'UNAUTHORIZED', 'Требуется авторизация.');
     requireCapability(req.user, 'analytics.read'); next();
   });
   router.get('/community', async (req, res) => {
     const range = parseAnalyticsRange(req.query);
-    res.json({ data: await repo.read(state => communityAnalytics(state, range)) });
+    res.json({ data: await read(state => communityAnalytics(state, range)) });
   });
   router.get('/members', async (req, res) => {
     const range = parseAnalyticsRange(req.query);
-    res.json(await repo.read(state => membersAnalytics(state, range, req.query)));
+    res.json(await read(state => membersAnalytics(state, range, req.query)));
   });
   router.get('/members/:id', async (req, res) => {
     const range = parseAnalyticsRange(req.query);
-    res.json({ data: await repo.read(state => memberAnalytics(state, String(req.params.id), range, req.query)) });
+    const id = String(req.params.id);
+    res.json({ data: await read(state => memberAnalytics(state, id, range, req.query),id) });
   });
   return router;
 }

@@ -45,6 +45,11 @@ test('shared pages coalesce reads, negotiate gzip, invalidate on writes and resp
   assert.equal(zipped.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await plain.json(), await zipped.json());
   const teamIds = async (session: string) => (await (await get('/stats', session)).json()).data.teams.map((team: {id: string}) => team.id);
+  const draftId = await repo.read(s => s.entities.find(e => e.id === draft.id)!.publicId);
+  assert.equal((await get(`/teams/${draftId}?view=detail`,cookie)).status,404);
+  const visibleCards = (await (await get('/teams?view=cards&limit=30',cookie)).json()).data;
+  assert.ok(visibleCards.length && visibleCards.every((row: {id:string;publicId:number;participants?:unknown;participantCount:number}) =>
+    row.id !== draft.id && row.publicId > 0 && Number.isInteger(row.participantCount) && row.participants === undefined));
   assert.ok((await teamIds(admin)).includes(draft.id));
   assert.ok(!(await teamIds(cookie)).includes(draft.id));
   await repo.write(state => { state.tags.push({ id: 'updated', name: 'Добавлен' }); });
@@ -121,7 +126,7 @@ test('Numeric profile deletion preserves ownership checks and the public ID high
   const state = await repo.read(value => value);
   assert.ok(state.users.some(user => user.id === 'user-1'));
   assert.ok(!state.users.some(user => user.id === 'user-2'));
-  assert.equal(state.userPublicIds.highWater, 20);
+  assert.equal(state.userPublicIds.highWater, 20 + initial.users.length - 2);
 });
 
 test('geography omits missing coordinates and empty city names without dropping users from totals', async t => {

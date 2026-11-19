@@ -1,6 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import pg from 'pg';
+import { analyticsState } from './analytics-reads.js';
+import { notFound } from './errors.js';
+import { readProjections } from './read-projections.js';
+import { entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
+import type { Query } from './domain.js';
+import type { Resource } from './shared/contracts.js';
+import { assignPublicIds } from './user-ids.js';
 import type { Activity, Entity, Item, Tag, User } from './shared/contracts.js';
 import { profileWithMemberships } from './domain.js';
 import { dashboardCards, readStatistics, type MapUser } from './community-reads.js';
@@ -22,14 +29,20 @@ export interface Repository {
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
   authRequest?(id: string): Promise<DatabaseState['authRequests'][string] | undefined>;
   readPage?<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T>;
+  list?(resource: Resource, query: Query, drafts: boolean, cards: boolean): Promise<unknown>;
+  exportProfile?(id: string): Promise<User>;
+  detail?(resource: Resource, id: string, drafts: boolean, compact: boolean): Promise<unknown>;
+  activity?(query: Pick<Query,'page'|'limit'>, drafts: boolean): Promise<unknown>;
+  readAnalytics?<T>(fn: (state: DatabaseState) => T, member?: string): Promise<T>;
+  dashboardOverview?(at: Date, drafts:boolean): Promise<unknown>;
   statistics?(includeDrafts: boolean): Promise<Statistics>;
-  geographyUsers?(): Promise<MapUser[]>;
+  geographyUsers?(overview?: boolean): Promise<MapUser[]>;
   read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
   write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
   close(): Promise<void>;
   ping?(): Promise<void>;
 }
-export type CommunityPage = 'tags' | 'items' | 'dashboard';
+export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
 type SessionPrincipal = { user: User; telegramId?: string; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
   return { users: [], entities: [], tags: [], items: [], activities: [], telegramUsers: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
@@ -42,12 +55,14 @@ export class MemoryRepository implements Repository {
   private queue: Promise<unknown> = Promise.resolve();
   constructor(initial: DatabaseState = emptyState(), private file?: string) {
     this.state = { ...structuredClone(initial), userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+    assignPublicIds(this.state);
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
   async write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
     const operation = this.queue.then(async () => {
       const draft = structuredClone(this.state);
       const result = await fn(draft);
+      assignPublicIds(draft);
       if (this.file) {
         await mkdir(dirname(this.file), { recursive: true });
         await writeFile(`${this.file}.tmp`, JSON.stringify(draft), 'utf8');
@@ -97,15 +112,61 @@ export class PostgresRepository implements Repository {
     });
   }
   async ping() { await this.pool.query('SELECT 1'); }
-  async geographyUsers(): Promise<MapUser[]> {
+  async geographyUsers(overview = false): Promise<MapUser[]> {
+    if (overview) {
+      return (await this.pool.query(`SELECT id,p.* FROM klan_users,jsonb_to_record(data) p(name text,"publicId" float8,
+        location jsonb,initials text,color text,"joinedAt" text) ORDER BY id`)).rows as MapUser[];
+    }
     const result = await this.pool.query<MapUser>(`SELECT u.id, p.* FROM klan_users u,
       jsonb_to_record(u.data) AS p(name text, username text, callsign text, bio text, location jsonb,
         interests jsonb, facts jsonb, achievements jsonb, tags jsonb, "joinedAt" text, "publicId" double precision,
         initials text, color text) ORDER BY u.id`);
     return result.rows;
   }
+  list(resource: Resource, q: Query, drafts: boolean, cards: boolean) {
+    return this.snapshot(db => readList(db, resource, q, drafts, cards));
+  }
+  async exportProfile(id: string) {
+    const row = await this.pool.query(`SELECT data - ARRAY['communityImport','historicalImport','access','stats','activeTeams','role','joinedAt','initials','color','publicId']
+      AS profile FROM klan_users WHERE id=$1`,[id]);
+    if (!row.rowCount) throw notFound();
+    return profileWithMemberships(row.rows[0].profile,[],{events:0,books:0,challenges:0});
+  }
+  detail(resource: Resource, id: string, drafts: boolean, compact: boolean) {
+    return this.snapshot(db => readDetail(db, resource, id, drafts, compact));
+  }
+  activity(q: Pick<Query,'page'|'limit'>, drafts: boolean) {
+    return this.snapshot(db => readActivity(db, {page:q.page,limit:q.limit}, drafts));
+  }
   statistics(includeDrafts: boolean) {
     return this.snapshot(db => readStatistics(db, includeDrafts));
+  }
+  private analyticsCache?: {revision:number; expires:number; data:Promise<DatabaseState>};
+  async readAnalytics<T>(fn: (state: DatabaseState) => T, member?: string) {
+    if (member) return fn(await this.snapshot(db => analyticsState(db,member)));
+    const cached = this.analyticsCache;
+    if (cached && cached.revision === this.revision && cached.expires > Date.now()) return fn(await cached.data);
+    const data = this.snapshot(db => analyticsState(db));
+    this.analyticsCache = {revision:this.revision, expires:Date.now()+10_000, data};
+    try {
+      const state = await data;
+      if (this.analyticsCache?.data === data && (state.users.length > 2000 || state.activities.length > 5000 ||
+        state.entities.reduce((sum,e) => sum + e.participants.length + (e.results?.length ?? 0),0) > 15000)) this.analyticsCache = undefined;
+      return fn(state);
+    } catch (error) {
+      if (this.analyticsCache?.data === data) this.analyticsCache = undefined;
+      throw error;
+    }
+  }
+  dashboardOverview(at: Date, drafts: boolean) {
+    return this.snapshot(async db => {
+      const row = (await db.query(`SELECT count(*)::int AS users, count(DISTINCT lower(trim(city)||':'||trim(country)))
+        FILTER (WHERE trim(city)<>'' AND lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180)::int AS cities
+        FROM klan_users,jsonb_to_record(data->'location') p(city text,country text,lat float8,lng float8)`)).rows[0];
+      const entities = (await db.query(entityCardSelect + ' ORDER BY e.id')).rows.map(r => r.card) as Entity[];
+      const cards = dashboardCards(entities,at), feed = await readActivity(db,{page:1,limit:5},drafts);
+      return {stats:{...row,...cards.counts},events:cards.events,teams:cards.teams,challenges:cards.challenges,activity:feed.data,activityTotal:feed.meta.total};
+    });
   }
   async readPage<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T> {
     const state = emptyState();
@@ -115,6 +176,26 @@ export class PostgresRepository implements Repository {
       return fn(state);
     }
     return this.snapshot(async db => {
+      if (page === 'tag-usage') {
+        state.tags = (await db.query(`SELECT t.data, COALESCE(n,0)::int AS count FROM klan_tags t LEFT JOIN
+          (SELECT tag->>'id' AS id, count(*) AS n FROM klan_users, jsonb_array_elements(data->'tags') tag GROUP BY 1) usage
+          ON usage.id=t.id`)).rows.map(r => ({...r.data, count:r.count}));
+        return fn(state);
+      }
+      if (page === 'catalog-tags' || page === 'catalog-items') {
+        const kind = page === 'catalog-tags' ? 'tags' : 'items';
+        state[kind] = (await db.query(`SELECT data FROM ${tables[kind]}`)).rows.map(r => r.data);
+        if (kind === 'items') {
+          state.entities = (await db.query(`SELECT ARRAY(SELECT jsonb_build_object('items',r->'items') FROM jsonb_array_elements(detail->'participants') r) AS participants FROM klan_entities`)).rows as Entity[];
+        } else {
+          state.users = (await db.query("SELECT id,data->'tags' AS tags FROM klan_users")).rows as User[];
+          // Only orphaned snapshots count; current profiles are authoritative.
+          state.entities = (await db.query(`SELECT e.card->'tags' AS tags, ARRAY(SELECT jsonb_build_object('user',ref)
+            FROM jsonb_array_elements(e.detail->'embeddedTags') ref WHERE NOT EXISTS
+            (SELECT 1 FROM klan_users known WHERE known.id=ref->>'id')) AS participants FROM klan_entities e`)).rows as Entity[];
+        }
+        return fn(state);
+      }
       state.users = (await db.query("SELECT data - ARRAY['historicalImport','communityImport'] AS profile FROM klan_users ORDER BY id")).rows.map(r => r.profile);
       state.activities = (await db.query('SELECT data FROM klan_activities ORDER BY id')).rows.map(r => r.data);
       // Discard daily results for the overview. Fetch complete documents only for the displayed cards.
@@ -131,15 +212,16 @@ export class PostgresRepository implements Repository {
   }
   async readSession(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined> {
     const result = await this.pool.query(`
-      SELECT u.data - ARRAY['communityImport','historicalImport'] AS profile, s.data->>'source' AS source,
+      SELECT CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport']
+        ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         CASE WHEN $3 THEN (
           SELECT jsonb_agg(jsonb_build_object('kind', e.kind, 'team', CASE WHEN e.kind = 'teams' THEN
-            jsonb_build_object('id', e.id, 'title', e.data->'title', 'description', e.data->'description',
-              'memberCount', (SELECT count(DISTINCT (p#>>'{user,id}')) FROM jsonb_array_elements(e.data->'participants') p)) END)
+            jsonb_strip_nulls(jsonb_build_object('id', e.id, 'publicId', e.card->'publicId', 'title', e.card->'title', 'description', e.card->'description',
+              'memberCount', (SELECT count(DISTINCT (p#>>'{user,id}')) FROM jsonb_array_elements(e.detail->'participants') p))) END)
             ORDER BY e.id)
           FROM klan_entities e
-          WHERE (e.kind IN ('events','challenges','teams') AND (e.kind <> 'teams' OR e.data->>'status' = 'active')
+          WHERE (e.kind IN ('events','challenges','teams') AND (e.kind <> 'teams' OR e.card->>'status' = 'active')
             AND e.data @> jsonb_build_object('participants', jsonb_build_array(jsonb_build_object('user', jsonb_build_object('id', u.id)))))
             OR (e.kind = 'books' AND e.data @> jsonb_build_object('readers', jsonb_build_array(jsonb_build_object('id', u.id))))
         ) END AS memberships
@@ -173,6 +255,35 @@ export class PostgresRepository implements Repository {
       await connection.query('CREATE TABLE IF NOT EXISTS klan_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
       const done = await connection.query('SELECT version FROM klan_migrations WHERE version = 1');
       if (!done.rowCount) { await connection.query(migration); await connection.query('INSERT INTO klan_migrations(version) VALUES(1)'); }
+      const indexed = await connection.query('SELECT version FROM klan_migrations WHERE version = 2');
+      if (!indexed.rowCount) {
+        await connection.query('SELECT pg_advisory_xact_lock(54652602)');
+        const state = emptyState();
+        for (const collection of ['users','entities'] as const) {
+          const rows = await connection.query(`SELECT id,data->'publicId' AS "publicId" FROM ${tables[collection]}`);
+          const ids = rows.rows.map(r => ({id:r.id, publicId:r.publicId ?? undefined}));
+          if (collection === 'users') state.users = ids as User[];
+          else state.entities = ids as Entity[];
+        }
+        const counters = await connection.query("SELECT id,data FROM klan_auth WHERE kind='userPublicIds'");
+        state.userPublicIds = Object.fromEntries(counters.rows.map(r => [r.id,r.data]));
+        assignPublicIds(state);
+        for (const collection of ['users','entities'] as const) {
+          const ids = state[collection].map(row => ({id:row.id, num:row.publicId}));
+          await connection.query(`UPDATE ${tables[collection]} t SET data=jsonb_set(t.data,'{publicId}',to_jsonb(r.num))
+            FROM jsonb_to_recordset($1::jsonb) r(id text,num bigint) WHERE t.id=r.id AND t.data->>'publicId' IS DISTINCT FROM r.num::text`,[JSON.stringify(ids)]);
+        }
+        for (const id of ['highWater','entityHighWater']) if (state.userPublicIds[id] !== undefined) await connection.query(
+          "INSERT INTO klan_auth VALUES ('userPublicIds',$1,to_jsonb($2::bigint)) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data",[id,state.userPublicIds[id]]);
+        await connection.query(readProjections);
+        await connection.query(`CREATE UNIQUE INDEX klan_entities_public_id ON klan_entities ((card->>'publicId'));
+          CREATE UNIQUE INDEX klan_users_public_id ON klan_users ((data->>'publicId'));
+          CREATE INDEX klan_telegram_user ON klan_auth (data) WHERE kind='telegramUsers';
+          CREATE INDEX klan_user_list ON klan_users ((data->>'joinedAt') DESC, id);
+          CREATE INDEX klan_entity_list ON klan_entities (kind, (card->>'createdAt') DESC, id);
+          CREATE INDEX klan_activity_feed ON klan_activities ((data->>'createdAt') DESC, id);
+          INSERT INTO klan_migrations(version) VALUES (2)`);
+      }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
@@ -233,6 +344,7 @@ export class PostgresRepository implements Repository {
       const state = await this.load(connection);
       const before = structuredClone(state);
       const result = await fn(state);
+      assignPublicIds(state);
       const communityChanged = await this.save(connection, before, state);
       await connection.query('COMMIT');
       if (communityChanged) this.revision++;

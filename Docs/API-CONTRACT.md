@@ -1,12 +1,14 @@
 # Klan API contract
 
-Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health and auth require HTTP-only cookie session. Errors `{error:{code,message}}`. Success `{data:T}`, list `{data:T[],meta:{page,limit,total,pages}}`. Dates ISO. IDs strings. Every server mutation validates input and emits activity + WebSocket invalidation after committing.
+Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health and auth require HTTP-only cookie session. Errors `{error:{code,message}}`. Success `{data:T}`, list `{data:T[],meta:{page,limit,total,pages}}`. Dates ISO. Internal IDs are strings. Numeric public IDs are stable for users and every entity type. Detail URLs accept either identifier. Every server mutation validates input and emits activity + WebSocket invalidation after committing.
 
 - GET /health; GET /auth/config -> {demo,botUsername}, with a null username until the bot connects; POST /auth/demo -> User (development only)
 - GET /auth/me -> User; POST /auth/logout
 - POST /auth/telegram/start -> {id,botUrl,expiresAt,displayCode}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'rejected'|'denied',user?:User} (sets session after approval in Telegram); POST /auth/telegram/cancel/:id -> 204 (cancels the initiating browser's request)
 - GET /users|events|teams|challenges|news|feedback|books|rules with page,limit,q,sort (`name`, `-name`, `createdAt`, `-createdAt`),status,category,tag (comma separated),city
-- GET /:resource/:id -> User or Entity
+- GET /:resource?view=cards returns list fields, `participantCount` and `readerCount`. Team pages request `limit=30`.
+- GET /:resource/:id -> User or Entity. With `view=detail`, entity responses include `people` and `teams` dictionaries. A nested user or team reference is its zero-based array index. Results and pending results preserve their order, dates and values.
+- GET /dashboard?view=cards includes card summaries, the first five activity entries and `activityTotal`. GET /tags?usage=1 includes the member count for each tag.
 - POST /:resource, PATCH /:resource/:id, DELETE /:resource/:id (admin; member may create feedback, owner edit feedback; user may edit self)
 - PATCH /users/:id accepts own name,firstName,lastName,middleName,callsign,username,birthDate,bio,location,facts,interests,achievements,tags; profile facts and achievements may include a date
 - POST /users/:id/tags {name} creates/assigns a normalized one-word tag to the current user's profile

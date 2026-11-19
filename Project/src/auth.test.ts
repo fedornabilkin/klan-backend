@@ -167,12 +167,12 @@ test('Demo selects only the configured profile and grants privileges only to its
   const romanId = 'pcm-2bd1e6d2-7b1f-447f-848b-f84cf302fa53';
   const f = await fixture({ demoUserId: romanId, demoAccessLevel: 'admin' });
   try {
-    await f.repo.write(state => { state.users.push({ ...admin, id: romanId, publicId: 1, name: 'Роман Смирнов', role: 'member' }); });
+    await f.repo.write(state => { state.users.push({ ...admin, id: romanId, publicId: 17, name: 'Роман Смирнов', role: 'member' }); });
     const response = await fetch(`${f.base}/demo?userId=admin`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: admin.id, role: 'member' }) });
     assert.equal(response.status, 200);
     const user = (await response.json()).data;
     assert.equal(user.id, romanId);
-    assert.equal(user.publicId, 1);
+    assert.equal(user.publicId, 17);
     assert.equal(user.role, 'admin');
     assert.equal(user.access.source, 'demo');
     assert.ok(user.access.capabilities.includes('members.manage'));
@@ -301,7 +301,7 @@ test('Production bot approval uses secure cookies, exposes computed access, and 
     const body = await approved.json();
     assert.equal(body.data.status, 'approved');
     assert.equal(body.data.user.role, 'member');
-    assert.equal(body.data.user.publicId, 1);
+    assert.equal(body.data.user.publicId, 2);
     assert.equal(body.data.user.access.level, 'moderator');
     assert.ok(body.data.user.access.capabilities.includes('catalog.manage'));
     assert.ok(!body.data.user.access.capabilities.includes('analytics.read'));

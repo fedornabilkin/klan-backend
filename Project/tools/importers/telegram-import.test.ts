@@ -100,14 +100,15 @@ test('two source names matching one manual profile remain unresolved until an ex
 
 test('ambiguous full names are reported and an apply transaction rolls back even unrelated safe rows',async()=>{
   const state=emptyState();
-  state.users=[user('one','Иван Петров'),user('two','Петров Иван')];
+  state.users=[user('one','Иван Петров'),user('two','Петров Иван',{publicId:2})];
   const input=source([person('2001','Иван Петров'),person('2002','Новый Участник')]);
   const plan=planTelegramImport(state,input,mapping,info);
   assert.equal(plan.report.conflicts[0]?.code,'AMBIGUOUS_FULL_NAME');
   assert.equal(plan.report.created,1);
   const repo=new MemoryRepository(state);
+  const before=await repo.read(s=>s);
   await assert.rejects(repo.write(s=>applyTelegramImport(s,input,mapping,info)),(error:unknown)=>error instanceof TelegramImportError&&error.code==='IMPORT_CONFLICTS');
-  assert.deepEqual(await repo.read(s=>s),state);
+  assert.deepEqual(await repo.read(s=>s),before);
   const result=await repo.write(s=>applyTelegramImport(s,input,mapping,{...info,skipConflicts:true}));
   assert.equal(result.created,1);
   assert.equal((await repo.read(s=>s.users)).length,3);

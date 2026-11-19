@@ -1,3 +1,4 @@
+import { assignPublicIds } from './user-ids.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Activity, Entity, Resource, User } from './shared/contracts.js';
@@ -83,7 +84,7 @@ export function profileWithMemberships(user: User, activeTeams: NonNullable<User
 }
 export function hydrateUser(state: DatabaseState, user: User): User {
   const teams = state.entities.filter(team => team.type === 'teams' && team.status === 'active' && team.participants.some(participant => participant.user.id === user.id))
-    .map(team => ({ id: team.id, title: team.title, description: team.description, memberCount: new Set(team.participants.map(participant => participant.user.id)).size }));
+    .map(team => ({ id: team.id, ...(team.publicId && { publicId: team.publicId }), title: team.title, description: team.description, memberCount: new Set(team.participants.map(participant => participant.user.id)).size }));
   return profileWithMemberships(user, teams, {
     events: state.entities.filter(e => e.type === 'events' && e.participants.some(p => p.user.id === user.id)).length,
     challenges: state.entities.filter(e => e.type === 'challenges' && e.participants.some(p => p.user.id === user.id)).length,
@@ -110,7 +111,7 @@ export function hydrateEntity(state: DatabaseState, entity: Entity): Entity {
   };
 }
 export function getEntity(state: DatabaseState, resource: string, id: string): Entity {
-  const entity = state.entities.find(e => e.id === id && e.type === resource);
+  const entity = state.entities.find(e => (e.id === id || String(e.publicId ?? '') === id) && e.type === resource);
   if (!entity) throw notFound();
   return entity;
 }
@@ -124,8 +125,16 @@ export function getUser(state: DatabaseState, id: string): User {
 }
 export function visibleState(state: DatabaseState, actor: User): DatabaseState {
   if (hasCapability(actor, 'content.manage')) return state;
-  const draftPaths = new Set(state.entities.filter(entity => entity.status === 'draft').map(entity => `/${entity.type}/${entity.id}`));
+  const draftPaths = new Set(state.entities.filter(entity => entity.status === 'draft').flatMap(entity => [`/${entity.type}/${entity.id}`,`/${entity.type}/${entity.publicId}`]));
   return { ...state, entities: state.entities.filter(entity => entity.status !== 'draft'), activities: state.activities.filter(activity => !activity.target || !draftPaths.has(activity.target.path)) };
+}
+export function publicActivity(state: DatabaseState, activity: Activity): Activity {
+  const user = activity.actor.publicId ? undefined : state.users.find(u => u.id === activity.actor.id);
+  const actor = user?.publicId ? {...activity.actor,publicId:user.publicId} : activity.actor;
+  if (!activity.target) return {...activity,actor};
+  const [,type,id] = activity.target.path.split('/');
+  const record = type === 'users' ? state.users.find(u => u.id === id) : state.entities.find(e => e.type === type && e.id === id);
+  return { ...activity,actor,target:record?.publicId ? {...activity.target,path:`/${type}/${record.publicId}`} : activity.target };
 }
 export function requireAdmin(actor: User) { if (actor.role !== 'admin') throw forbidden(); }
 
@@ -223,6 +232,7 @@ export function createEntity(state: DatabaseState, resource: Entity['type'], inp
   if (resource === 'challenges') entity.results = [];
   validateEntity(state, entity);
   state.entities.push(entity);
+  assignPublicIds(state);
   return hydrateEntity(state, entity);
 }
 export function editEntity(state: DatabaseState, resource: Entity['type'], id: string, input: unknown, actor: User): Entity {
@@ -245,7 +255,7 @@ export function joinEntity(state: DatabaseState, resource: string, id: string, a
   if (entity.participants.some(p => p.user.id === actor.id)) return hydrateEntity(state, entity);
   if (entity.capacity && entity.participants.length >= entity.capacity) throw new HttpError(409, 'FULL', 'Свободных мест больше нет');
   if (resource === 'teams') {
-    const other = state.entities.find(e => e.type === 'teams' && e.status === 'active' && e.id !== id && e.participants.some(p => p.user.id === actor.id));
+    const other = state.entities.find(e => e.type === 'teams' && e.status === 'active' && e.id !== entity.id && e.participants.some(p => p.user.id === actor.id));
     if (other) throw new HttpError(409, 'ACTIVE_TEAM_EXISTS', `Вы уже состоите в активной команде «${other.title}»`);
   }
   let team: { id: string; title: string } | undefined;

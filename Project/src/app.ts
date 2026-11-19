@@ -10,6 +10,8 @@ import type { Activity, Entity, Resource, User } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, Repository } from './repository.js';
 import { dashboardCards, statistics } from './community-reads.js';
+import { compactDetail, entityCard, userCard } from './resource-reads.js';
+import { publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
 import { userPath } from './shared/user-links.js';
 import { createAuth, type AuthDependencies } from './auth.js';
@@ -77,7 +79,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     const outcome = await repo.write(state => {
       const data = fn(state); const destination = target?.(data);
       const draft = !!destination && state.entities.some(entity => entity.status === 'draft' && destination.path === `/${entity.type}/${entity.id}`);
-      return { data, activity: addActivity(state, actor, action, destination), draft };
+      return { data, activity: publicActivity(state, addActivity(state, actor, action, destination)), draft };
     });
     // Draft activities remain available to administrators via the feed; never broadcast their titles to members.
     notify(collection, outcome.draft ? undefined : outcome.activity);
@@ -89,6 +91,14 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   const readPage = <T>(page: CommunityPage, fn: (state: DatabaseState) => T, at = new Date()) =>
     repo.readPage ? repo.readPage(page, fn, at) : repo.read(fn);
   for (const catalog of ['tags', 'items'] as const) {
+    app.get(`/api/${catalog}`, (req, res, next) => {
+      if (catalog !== 'tags' || req.query.usage !== '1') return next();
+      return sendPage(req, res, 'tag-usage', () => readPage('tag-usage', state => {
+        const counts = new Map<string,number>();
+        for (const user of state.users) for (const tag of user.tags) counts.set(tag.id,(counts.get(tag.id) ?? 0)+1);
+        return state.tags.map(tag => ({count:counts.get(tag.id) ?? 0,...tag}));
+      }));
+    });
     app.get(`/api/${catalog}`, (req, res) => sendPage(req, res, catalog, () =>
       readPage(catalog, state => state[catalog].slice().sort((a, b) => a.name.localeCompare(b.name, 'ru')))));
   }
@@ -105,10 +115,9 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     res.json(result);
   });
   app.get('/api/users/me/export', async (req, res) => {
-    const profile = await repo.read(state => {
-      const { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags } = hydrateUser(state, getUser(state, req.user!.id));
-      return { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags };
-    });
+    const { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags } =
+      repo.exportProfile ? await repo.exportProfile(req.user!.id) : await repo.read(s => hydrateUser(s,getUser(s,req.user!.id)));
+    const profile = { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags };
     res.json({ data: { version: 1, profile } });
   });
   app.post('/api/users/me/import', async (req, res) => {
@@ -122,13 +131,16 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   });
   app.get('/api/activity', async (req, res) => {
     const params = query(req);
-    res.json(await repo.read(state => paginate(visibleState(state, req.user!).activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)), params)));
+    res.json(repo.activity ? await repo.activity(params, hasCapability(req.user, 'content.manage')) : await repo.read(state => {
+      const result = paginate(visibleState(state, req.user!).activities.slice().sort((a,b) => b.createdAt.localeCompare(a.createdAt)), params);
+      return {...result,data:result.data.map(a => publicActivity(state,a))};
+    }));
   });
   app.get('/api/geography', async (req, res) => {
     const params = query(req);
     const unfiltered = !params.q && !params.tag && !params.city && !params.category && !params.status && params.sort === '-createdAt';
     await sendPage(req, res, unfiltered ? 'geography' : undefined, async () => {
-      const users = repo.geographyUsers ? await repo.geographyUsers() : await repo.read(state => state.users);
+      const users = repo.geographyUsers ? await repo.geographyUsers(unfiltered) : await repo.read(state => state.users);
       const cities = new Map<string, { id: string; city: string; country: string; lat: number; lng: number; count: number; users: Pick<User, 'id' | 'publicId' | 'name' | 'initials' | 'color'>[] }>();
       for (const user of filtered(users, params)) {
         const { lat, lng } = user.location;
@@ -147,14 +159,17 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.get('/api/dashboard', async (req, res) => {
     const now = new Date();
     const scope = hasCapability(req.user, 'content.manage') ? 'all' : 'published';
-    await sendPage(req, res, `dashboard-${scope}`, () => readPage('dashboard', raw => {
+    const compact = req.query.view === 'cards';
+    await sendPage(req, res, `${compact ? 'dashboard-cards' : 'dashboard'}-${scope}`, () => compact && repo.dashboardOverview
+      ? repo.dashboardOverview(now,scope === 'all') : readPage('dashboard', raw => {
       const state = visibleState(raw, req.user!);
       const cards = dashboardCards(state.entities, now);
       const mapUsers = state.users.filter(({ location }) => location.city.trim()
         && typeof location.lat === 'number' && Number.isFinite(location.lat) && location.lat >= -90 && location.lat <= 90
         && typeof location.lng === 'number' && Number.isFinite(location.lng) && location.lng >= -180 && location.lng <= 180);
-      return { stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, ...cards.counts },
-        events: cards.events.map(e => hydrateEntity(state, e)), challenges: cards.challenges.map(e => hydrateEntity(state, e)), teams: cards.teams.map(e => hydrateEntity(state, e)), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20) };
+      const card = (e: Entity) => compact ? entityCard(e) : hydrateEntity(state,e);
+      return { activityTotal:state.activities.length, stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, ...cards.counts },
+        events: cards.events.map(card), challenges: cards.challenges.map(card), teams: cards.teams.map(card), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, compact ? 5 : 20).map(a => publicActivity(state,a)) };
     }, now));
   });
   app.get('/api/stats', async (req, res) => {
@@ -162,7 +177,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     await sendPage(req, res, `stats-${includeDrafts ? 'all' : 'published'}`, () => repo.statistics ? repo.statistics(includeDrafts) : repo.read(raw => {
       const state = visibleState(raw, req.user!);
       return statistics(state.users.map(u => ({ city: u.location.city, tags: u.tags, achievements: u.achievements })),
-        state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, title: e.title, count: e.participants.length })),
+        state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, publicId: e.publicId, title: e.title, count: e.participants.length })),
         state.activities.map(a => a.createdAt.slice(0, 10)));
     }));
   });
@@ -205,10 +220,32 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     }, entityTarget));
     notify('users');
   });
-  app.get('/api/:resource', async (req, res) => { const collection = resource(req); const params = query(req); res.json(await repo.read(state => listResource(visibleState(state, req.user!), collection, params))); });
+  app.get('/api/:resource', async (req, res) => {
+    const collection = resource(req), params = query(req), cards = req.query.view === 'cards';
+    if (collection === 'teams' && req.query.limit === undefined) params.limit = 30;
+    if (repo.list) return res.json(await repo.list(collection, params, hasCapability(req.user, 'content.manage'), cards));
+    res.json(await repo.read(raw => {
+      const state = visibleState(raw,req.user!);
+      if (!cards) return listResource(state,collection,params);
+      if (collection === 'users') {
+        const page = paginate(filtered(state.users,params),params);
+        return {...page,data:page.data.map(u => userCard(hydrateUser(state,u),hasCapability(req.user,'content.manage')))};
+      }
+      const page = paginate(filtered(state.entities.filter(e => e.type === collection),params),params);
+      return {...page,data:page.data.map(entityCard)};
+    }));
+  });
   app.get('/api/:resource/:id', async (req, res) => {
-    const collection = resource(req); const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
-    res.json({ data: await repo.read(raw => { const state = visibleState(raw, req.user!); return collection === 'users' ? hydrateUser(state, getUser(state, id)) : hydrateEntity(state, getEntity(state, collection, id)); }) });
+    const collection = resource(req), compact = req.query.view === 'detail';
+    const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
+    const data = repo.detail ? await repo.detail(collection,id,hasCapability(req.user,'content.manage'),compact) : await repo.read(raw => {
+      const state = visibleState(raw,req.user!);
+      if (collection === 'users') return hydrateUser(state,getUser(state,id));
+      const entity = getEntity(state,collection,id);
+      return compact ? compactDetail(entity,new Map(state.users.map(u => [u.id,u])),new Map(state.entities.filter(t => t.type === 'teams')
+        .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}]))) : hydrateEntity(state,entity);
+    });
+    res.json({data});
   });
   app.post('/api/:resource', async (req, res) => {
     const collection = resource(req);
@@ -239,10 +276,11 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
         for (const [requestId, request] of Object.entries(state.authRequests)) if (request.userId === userId) delete state.authRequests[requestId];
       } else {
         const deletedEntity = getEntity(state, collection, id);
-        if (collection === 'teams' && state.entities.some(entity => entity.type === 'challenges' && (entity.participants.some(p => p.team?.id === id) || entity.results?.some(r => r.team?.id === id)))) throw new HttpError(409, 'TEAM_HISTORY_EXISTS', 'У команды есть история челленджей. Переведите её в архив.');
+        const entityId = deletedEntity.id;
+        if (collection === 'teams' && state.entities.some(entity => entity.type === 'challenges' && (entity.participants.some(p => p.team?.id === entityId) || entity.results?.some(r => r.team?.id === entityId)))) throw new HttpError(409, 'TEAM_HISTORY_EXISTS', 'У команды есть история челленджей. Переведите её в архив.');
         // A removed draft must not make its previously hidden activity public.
-        if (deletedEntity.status === 'draft') state.activities = state.activities.filter(activity => activity.target?.path !== `/${collection}/${id}`);
-        state.entities = state.entities.filter(entity => entity.id !== id);
+        if (deletedEntity.status === 'draft') state.activities = state.activities.filter(activity => ![`/${collection}/${entityId}`,`/${collection}/${deletedEntity.publicId}`].includes(activity.target?.path ?? ''));
+        state.entities = state.entities.filter(entity => entity.id !== entityId);
       }
       return { success: true };
     }));

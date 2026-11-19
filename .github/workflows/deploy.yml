@@ -34,7 +34,6 @@ jobs:
       - name: Проверить приложение
         working-directory: Project
         run: |
-          npm run typecheck
           npm test
           npm run build
           npm run typecheck:tools

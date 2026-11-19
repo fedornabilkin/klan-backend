@@ -33,23 +33,34 @@ function embeddedUsers(entity: DatabaseState['entities'][number]): User[] {
   ];
 }
 
-/** Counts live references, ignoring stale copies of a still-existing user's profile. */
-export function catalogUsage(state: DatabaseState, kind: CatalogKind, id: string): CatalogUsage {
+/** Count each tag once per live profile/entity and each item once per participant. */
+function catalogCounts(state: DatabaseState, kind: CatalogKind, ids: string[]) {
+  const usage = new Map<string,CatalogUsage>(ids.map(id => [id,{users:0,entities:0,participants:0,total:0}]));
   if (kind === 'tags') {
-    const users = state.users.filter(user => user.tags.some(tag => tag.id === id)).length;
-    const knownUsers = new Set(state.users.map(user => user.id));
-    const entities = state.entities.filter(entity => entity.tags.some(tag => tag.id === id)
-      || embeddedUsers(entity).some(user => !knownUsers.has(user.id) && user.tags.some(tag => tag.id === id))).length;
-    return { users, entities, participants: 0, total: users + entities };
+    const known = new Set(state.users.map(user => user.id));
+    for (const user of state.users) for (const id of new Set(user.tags.map(t => t.id))) {
+      const row = usage.get(id);
+      if (row) { row.users++; row.total++; }
+    }
+    for (const entity of state.entities) {
+      const ids = new Set(entity.tags.map(t => t.id));
+      for (const user of embeddedUsers(entity)) if (!known.has(user.id)) for (const t of user.tags) ids.add(t.id);
+      for (const id of ids) { const row = usage.get(id); if (row) { row.entities++; row.total++; } }
+    }
+  } else {
+    for (const entity of state.entities) {
+      const used = new Set<string>();
+      for (const p of entity.participants) for (const id of new Set(p.items?.map(i => i.id))) {
+        const row = usage.get(id);
+        if (row) { used.add(id); row.participants++; row.total++; }
+      }
+      for (const id of used) usage.get(id)!.entities++;
+    }
   }
-  let entities = 0;
-  let participants = 0;
-  for (const entity of state.entities) {
-    const references = entity.participants.filter(participant => participant.items?.some(item => item.id === id)).length;
-    if (references) entities++;
-    participants += references;
-  }
-  return { users: 0, entities, participants, total: participants };
+  return usage;
+}
+export function catalogUsage(state: DatabaseState, kind: CatalogKind, id: string): CatalogUsage {
+  return catalogCounts(state,kind,[id]).get(id)!;
 }
 
 function catalogEntry(state: DatabaseState, kind: CatalogKind, id: string): CatalogEntry {
@@ -61,7 +72,8 @@ function catalogEntry(state: DatabaseState, kind: CatalogKind, id: string): Cata
 export function listCatalog(state: DatabaseState, kind: CatalogKind, input: unknown, actor: User): CatalogListResponse {
   requireCapability(actor, 'catalog.manage');
   const query = catalogQuerySchema.parse(input);
-  const all = state[kind].map(entry => catalogEntry(state, kind, entry.id));
+  const usage = catalogCounts(state,kind,state[kind].map(entry => entry.id));
+  const all = state[kind].map(entry => ({...entry,usage:usage.get(entry.id)!}));
   const terms = nameKey(query.q).split(' ').filter(Boolean);
   const rows = all.filter(entry => terms.every(term => nameKey(entry.name).includes(term)));
   const ascending = query.sort.startsWith('-') ? -1 : 1;
@@ -143,7 +155,8 @@ export function createCatalogRouter(repo: Repository, notify: (resource: string,
   router.use((req, _res, next) => { requireCapability(req.user!, 'catalog.manage'); next(); });
   router.get('/:kind', async (req, res) => {
     const kind = catalogKindSchema.parse(req.params.kind);
-    res.json(await repo.read(state => listCatalog(state, kind, req.query, req.user!)));
+    const list = (state: DatabaseState) => listCatalog(state, kind, req.query, req.user!);
+    res.json(repo.readPage ? await repo.readPage(`catalog-${kind}`,list,new Date()) : await repo.read(list));
   });
   // Catalog names occur in many entity types; one wildcard avoids a burst of repeated dashboard reloads.
   const notifyChanges = (activity: Activity) => notify('*', activity);
