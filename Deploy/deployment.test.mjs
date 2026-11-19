@@ -186,6 +186,8 @@ for (const [setting, value, expected] of [
 
 test('successful deployment publishes current and retains the previous release', { skip: unavailable }, (context) => {
   const fixture = harness(context);
+  write(join(fixture.incoming, 'runtime.env'),
+    'SYNTHETIC_CONFIGURATION=only\nTELEGRAM_BOT_TOKEN=123:fake-legacy-token\nTELEGRAM_BOT_USERNAME=legacy_bot\n');
   const result = fixture.deploy();
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.equal(fixture.current(), `releases/${fixture.newId}`);
@@ -193,6 +195,7 @@ test('successful deployment publishes current and retains the previous release',
   assert.deepEqual(fixture.hooks(), ['preflight:new', 'start:new', 'verify:new']);
   assert.doesNotMatch(result.stdout + result.stderr, /fake-short-lived-token/);
   assert.equal(readFileSync(join(fixture.root, 'releases', fixture.newId, 'tracked-source'), 'utf8'), 'This file must come from git archive.\n');
+  assert.equal(readFileSync(join(fixture.root, 'releases', fixture.newId, 'runtime.env'), 'utf8'), 'SYNTHETIC_CONFIGURATION=only\n');
   assert.equal(existsSync(join(fixture.incoming, 'runtime.env')), false);
 });
 

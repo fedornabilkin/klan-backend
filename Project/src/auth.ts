@@ -8,6 +8,7 @@ import { hydrateUser } from './domain.js';
 import { accessForLevel, resolveTelegramAccess } from './access.js';
 import type { AccessSummary } from './shared/access.js';
 import { allocateUserPublicId } from './user-ids.js';
+import type { TelegramMethod } from './bot-channel.js';
 
 declare global {
   namespace Express {
@@ -19,11 +20,11 @@ type TelegramUser = { id: number; is_bot?: boolean; first_name: string; last_nam
 type TelegramMessage = { from?: TelegramUser; chat: { id: number; type: string }; text?: string };
 export type TelegramUpdate = { update_id: number; message?: TelegramMessage };
 type TelegramMember = { status: string; is_member?: boolean };
-type TelegramEnvelope<T> = { ok: boolean; result?: T };
 const authLifetimeMs = 5 * 60 * 1000;
 export interface AuthDependencies {
   now?: () => number;
-  telegramRequest?: <T>(method: string, payload: object, signal?: AbortSignal) => Promise<T>;
+  botUsername?: () => string | undefined;
+  telegramRequest?: <T>(method: TelegramMethod, payload: object) => Promise<T>;
 }
 
 export function hashToken(value: string): string {
@@ -71,25 +72,17 @@ export function createAuth(
   const pendingChecks = new Map<string, Promise<AccessSummary | undefined>>();
   const requireMembership = config.telegramGroupMembershipRequired !== false;
 
-  async function telegram<T>(method: string, payload: object, signal?: AbortSignal): Promise<T> {
-    if (!config.botToken) throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Вход через Telegram пока не настроен.');
-    // Never include Telegram's URL or request payload in an error: the URL contains the bot token.
+  async function telegram<T>(method: TelegramMethod, payload: object): Promise<T> {
     try {
-      if (dependencies.telegramRequest) return await dependencies.telegramRequest<T>(method, payload, signal);
-      const response = await fetch(`https://api.telegram.org/bot${config.botToken}/${method}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35_000)]) : AbortSignal.timeout(12_000),
-      });
-      const body = await response.json() as TelegramEnvelope<T>;
-      if (!response.ok || !body.ok || body.result === undefined) throw new Error('Unavailable');
-      return body.result;
+      if (!dependencies.telegramRequest) throw new Error('Bot unavailable');
+      return await dependencies.telegramRequest<T>(method, payload);
     } catch {
       throw failure(503, 'TELEGRAM_UNAVAILABLE', 'Telegram временно недоступен. Попробуйте ещё раз.');
     }
   }
 
   async function telegramAccess(telegramId: string, fresh = false): Promise<AccessSummary | undefined> {
-    if (!config.botToken) return undefined;
+    if (!config.botInternalSecret) return undefined;
     if (!requireMembership) {
       return accessForLevel(config.adminTelegramIds.includes(telegramId) ? 'admin' : 'member', 'telegram');
     }
@@ -196,8 +189,10 @@ export function createAuth(
     await recordEvent(user, 'вошёл в сообщество');
   }
 
+  const currentBotUsername = () => config.botInternalSecret && (!requireMembership || config.telegramGroups.length > 0)
+    ? dependencies.botUsername?.() : undefined;
   router.get('/config', (_req, res) => {
-    res.json({ data: { demo: config.demo && !config.production, botUsername: config.botUsername ?? null } });
+    res.json({ data: { demo: config.demo && !config.production, botUsername: currentBotUsername() ?? null } });
   });
   router.get('/me', requireAuth, (req, res) => res.json({ data: req.user }));
 
@@ -227,9 +222,11 @@ export function createAuth(
 
   router.post('/telegram/start', async (_req, res, next) => {
     try {
-      if (!config.botToken || !config.botUsername || (requireMembership && config.telegramGroups.length === 0)) {
+      if (!config.botInternalSecret || (requireMembership && config.telegramGroups.length === 0)) {
         throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Для входа администратор должен настроить авторизацию через Telegram.');
       }
+      const botUsername = currentBotUsername();
+      if (!botUsername) throw failure(503, 'TELEGRAM_UNAVAILABLE', 'Бот Telegram временно недоступен. Попробуйте ещё раз.');
       const id = randomBytes(24).toString('hex');
       const browserToken = randomBytes(32).toString('hex');
       const expiresAt = new Date(now() + authLifetimeMs).toISOString();
@@ -240,7 +237,7 @@ export function createAuth(
         state.authRequests[id] = { browserHash: hashToken(browserToken), expiresAt, status: 'pending' };
       });
       res.cookie(browserCookie, browserToken, { ...cookieOptions, maxAge: authLifetimeMs });
-      res.json({ data: { id, botUrl: `https://t.me/${config.botUsername}?start=${id}`, expiresAt } });
+      res.json({ data: { id, botUrl: `https://t.me/${botUsername}?start=${id}`, expiresAt } });
     } catch (error) { next(error); }
   });
 

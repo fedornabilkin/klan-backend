@@ -54,7 +54,7 @@ npm start
 
 Для демо `DEMO_USER_ID` задаёт существующий внутренний ID профиля; произвольный первый пользователь не выбирается. `DEMO_ACCESS_LEVEL=admin` действует только для демонстрационной сессии. Путь `DEMO_DATA_FILE=.local/demo.json` разрешается от `Project/`; можно указать абсолютный путь к приватному файлу. Не используйте production-базу для демовхода.
 
-Production требует HTTPS-адрес в `APP_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` без `@` и `BOT_INTERNAL_SECRET`, совпадающий с `BOT_BACKEND_SECRET` бота. По умолчанию для входа нужно состоять в одной из групп `TELEGRAM_GROUP_IDS`. С `TELEGRAM_REQUIRE_GROUP_MEMBERSHIP=false` любой пользователь, который подтвердил вход через бота, получает роль участника. В этом режиме роль администратора назначается по числовому ID из `TELEGRAM_ADMIN_IDS`. Отдельный бот получает обновления Telegram.
+Production требует HTTPS-адрес в `APP_ORIGIN` и `BOT_INTERNAL_SECRET`, совпадающий с `BOT_BACKEND_SECRET` бота. Укажите токен BotFather в настройках бота. Бот сам передаёт своё имя API после запуска. По умолчанию для входа нужно состоять в одной из групп `TELEGRAM_GROUP_IDS`. С `TELEGRAM_REQUIRE_GROUP_MEMBERSHIP=false` любой пользователь, который подтвердил вход через бота, получает роль участника. В этом режиме роль администратора назначается по числовому ID из `TELEGRAM_ADMIN_IDS`.
 
 Реальные `.env`, `Project/.local/`, импорты и снимки базы исключены из Git. `Docker/Dockerfile.dockerignore` ограничивает build context исходниками, npm/TypeScript-конфигурацией и публичным справочником. Секреты передаются при запуске и не попадают в образ.
 
@@ -118,7 +118,7 @@ docker compose --env-file Docker/.env -f Docker/compose.external-db.yaml up -d -
 
 ## Frontend, bot и reverse proxy
 
-Frontend проксирует `/api/*` и `/ws` на backend с поддержкой WebSocket; браузер использует тот же HTTPS origin, что и `APP_ORIGIN`. Не публикуйте `/internal/telegram/updates` в публичном proxy: этот маршрут предназначен для bot и дополнительно защищён секретом. На одном хосте proxy может обращаться к `127.0.0.1:3001`.
+Frontend проксирует `/api/*` и `/ws` на backend с поддержкой WebSocket. Браузер использует тот же HTTPS origin, что и `APP_ORIGIN`. Закройте весь путь `/internal/telegram` от публичного доступа. Бот обращается к нему по частному маршруту с общим секретом. На одном хосте proxy может обращаться к `127.0.0.1:3001`.
 
 Для отдельных Compose-проектов создайте общую сеть и подключите необязательный override:
 

@@ -10,8 +10,9 @@ import type { Config } from './config.js';
 import type { DatabaseState, Repository } from './repository.js';
 import { profileEntryText } from './shared/profile-entries.js';
 import { userPath } from './shared/user-links.js';
-import { createAuth } from './auth.js';
+import { createAuth, type AuthDependencies } from './auth.js';
 import { createBotIngress } from './bot-ingress.js';
+import { createBotChannel } from './bot-channel.js';
 import { createCatalogRouter, findOrCreateCatalogEntry } from './catalog.js';
 import { createAnalyticsRouter } from './analytics.js';
 import { createLocationCatalogRouter } from './location-catalog.js';
@@ -21,7 +22,7 @@ import { HttpError, notFound, forbidden } from './errors.js';
 import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, setResult, updateProfile, visibleState } from './domain.js';
 
 export type Broadcast = (message: { type: 'invalidate'; resource: string } | { type: 'activity'; data: Activity }) => void;
-export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined) {
+export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies) {
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -50,12 +51,13 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     broadcast({ type: 'invalidate', resource: 'stats' });
     if (activity) broadcast({ type: 'activity', data: activity });
   };
+  const botChannel = createBotChannel();
   const auth = createAuth(repo, config, async (actor, action) => {
     const activity = await repo.write(state => addActivity(state, actor, action));
     notify('users', activity);
-  });
+  }, authDependencies ?? botChannel);
   // A service endpoint, outside browser cookie authentication and Origin handling.
-  app.use('/internal/telegram', createBotIngress(config.botInternalSecret, auth.handleTelegramUpdate));
+  app.use('/internal/telegram', createBotIngress(config.botInternalSecret, auth.handleTelegramUpdate, botChannel));
   app.use(['/api/auth/demo', '/api/auth/telegram/start'], rateLimit({ windowMs: 5 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много попыток входа. Попробуйте позже.' } } }));
   app.use('/api/auth', rateLimit({ windowMs: 5 * 60 * 1000, limit: 400, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте позже.' } } }), auth.router);
   app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте через минуту.' } } }));

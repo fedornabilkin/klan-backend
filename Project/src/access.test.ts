@@ -33,7 +33,7 @@ test('Capabilities separate catalog moderators from private analytics and member
 });
 
 test('Production config rejects demo, non-HTTPS and malformed Telegram policy', () => {
-  const env = { NODE_ENV: 'production', APP_ORIGIN: 'https://klan.example.org', DATABASE_URL: 'postgresql://local/klan', TELEGRAM_BOT_TOKEN: 'test-only', TELEGRAM_BOT_USERNAME: 'klan_test_bot', TELEGRAM_GROUP_IDS: '-1001', BOT_INTERNAL_SECRET: 'test-service-secret-'.repeat(3) };
+  const env = { NODE_ENV: 'production', APP_ORIGIN: 'https://klan.example.org', DATABASE_URL: 'postgresql://local/klan', TELEGRAM_GROUP_IDS: '-1001', BOT_INTERNAL_SECRET: 'test-service-secret-'.repeat(3) };
   assert.equal(readConfig(env).membershipTtlMs, 60_000);
   for (const patch of [
     { DEMO_MODE: 'true' }, { APP_ORIGIN: 'http://klan.example.org' }, { TELEGRAM_GROUP_IDS: 'a-group' },

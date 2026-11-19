@@ -194,11 +194,12 @@ for (const role of ['frontend', 'backend', 'bot']) {
 
 test('domain configuration provisions three components and repeats without replacing credentials or existing data', { skip: unavailable }, (context) => {
   const setup = fixture(context);
-  successful(setup.configure('all', [domain, token, 'Klan_Test_Bot', '-1234567', '', 'ops@example.test']));
+  successful(setup.configure('all', [domain, token, '-1234567', '', 'ops@example.test']));
   const backend = setup.read('opt/klan/backend/shared/runtime.env');
   const bot = setup.read('opt/klan/bot/shared/runtime.env');
   const value = (text, key) => text.split('\n').find((line) => line.startsWith(key + '='))?.slice(key.length + 1);
-  assert.equal(value(backend, 'TELEGRAM_BOT_TOKEN'), token);
+  assert.equal(value(backend, 'TELEGRAM_BOT_TOKEN'), undefined);
+  assert.equal(value(backend, 'TELEGRAM_BOT_USERNAME'), undefined);
   assert.equal(value(bot, 'TELEGRAM_BOT_TOKEN'), token);
   assert.equal(value(backend, 'BOT_INTERNAL_SECRET'), value(bot, 'BOT_BACKEND_SECRET'));
   assert.notEqual(value(backend, 'POSTGRES_PASSWORD'), value(backend, 'BOT_INTERNAL_SECRET'));
@@ -233,7 +234,7 @@ test('bot-only asks for the existing API secret and accepts a private remote ori
 test('IP configuration can set up Telegram sign-in without prompting for groups', { skip: unavailable }, (context) => {
   const setup = fixture(context);
   const ip = '192.0.2.33';
-  const result = setup.configure('all', [ip, '8443', token, 'Klan_Test_Bot', '12345', 'ops@example.test'], {
+  const result = setup.configure('all', [ip, '8443', token, '12345', 'ops@example.test'], {
     TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: 'false',
   }, 'configure-ip');
   successful(result);
@@ -278,7 +279,10 @@ test('frontend-only configures its origin without Docker or Telegram settings', 
 
 test('backend-only creates API settings and verifies its assigned private bind address', { skip: unavailable }, (context) => {
   const setup = fixture(context);
-  successful(setup.configure('backend', [domain, token, 'Klan_Test_Bot', '-1234567', '', '10.23.0.8']));
+  const result = setup.configure('backend', [domain, '-1234567', '', '10.23.0.8']);
+  successful(result);
+  assert.doesNotMatch(result.stderr, /Токен Telegram|Имя бота/);
+  assert.doesNotMatch(setup.read('opt/klan/backend/shared/runtime.env'), /^TELEGRAM_BOT_/m);
   assert.equal(setup.read('opt/klan/backend/shared/api-bind-address'), '10.23.0.8\n');
   assert.match(setup.read('opt/klan/backend/shared/runtime.env'), /^APP_ORIGIN=https:\/\/community\.example\.test$/m);
   assert.ok(setup.exists('volumes/klan-production-postgres'));

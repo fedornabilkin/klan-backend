@@ -10,15 +10,13 @@ import type { Config } from './config.js';
 import { hashToken } from './auth.js';
 import type { Activity } from './shared/contracts.js';
 
-const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: ['-1001'], botToken: 'not-a-real-token', adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-1', demoAccessLevel: 'admin' };
+const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: ['-1001'], botInternalSecret: 'app-tests-service-secret-'.repeat(2), adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-1', demoAccessLevel: 'admin' };
 test('API auth, CSRF, catalog writes, profile, admin CRUD, errors, export and filters', async t => {
   const repo = new MemoryRepository(createSeed());
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => String(input).startsWith('https://api.telegram.org/')
-    ? Response.json({ ok: true, result: { status: 'member' } }) : originalFetch(input, init);
-  t.after(() => { globalThis.fetch = originalFetch; });
   const activities: Activity[] = [];
-  const { app } = createApp(repo, config, message => { if (message.type === 'activity') activities.push(message.data); });
+  const { app } = createApp(repo, config, message => { if (message.type === 'activity') activities.push(message.data); }, {
+    telegramRequest: async <T>() => ({ status: 'member' }) as T,
+  });
   const server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;

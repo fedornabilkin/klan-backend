@@ -113,7 +113,7 @@ test('Telegram authentication uses immutable ID bindings despite profile usernam
   const existingRequest = 'a'.repeat(48); const unrelatedRequest = 'b'.repeat(48);
   for (const id of [existingRequest, unrelatedRequest]) state.authRequests[id] = { browserHash: 'test', expiresAt: new Date(Date.now() + 60000).toISOString(), status: 'pending' };
   const repo = new MemoryRepository(state);
-  const auth = createAuth(repo, { ...config, botToken: 'not-real', telegramGroups: ['-100123'] }, undefined, { telegramRequest: async <T>() => ({ status: 'member' }) as T });
+  const auth = createAuth(repo, { ...config, botInternalSecret: 'test-service-secret-'.repeat(3), telegramGroups: ['-100123'] }, undefined, { telegramRequest: async <T>() => ({ status: 'member' }) as T });
   await auth.handleTelegramUpdate({ update_id: 1, message: { from: { id: 98765, first_name: 'Another', username: 'contact_handle' }, chat: { id: 98765, type: 'private' }, text: `/start ${unrelatedRequest}` } });
   await repo.read(current => {
     assert.equal(current.telegramUsers['12345'], user.id);

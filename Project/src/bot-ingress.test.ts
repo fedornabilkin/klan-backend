@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import express, { type ErrorRequestHandler } from 'express';
@@ -68,8 +69,71 @@ test('API bot endpoint is disabled without a secret and is separate from browser
 });
 
 test('production requires a strong service secret for the separate bot', () => {
-  const env = { NODE_ENV: 'production', APP_ORIGIN: 'https://klan.example.org', DATABASE_URL: 'postgres://localhost/klan', TELEGRAM_BOT_TOKEN: 'test-token', TELEGRAM_BOT_USERNAME: 'klan_test_bot', TELEGRAM_GROUP_IDS: '-1001' };
+  const env = { NODE_ENV: 'production', APP_ORIGIN: 'https://klan.example.org', DATABASE_URL: 'postgres://localhost/klan', TELEGRAM_GROUP_IDS: '-1001' };
   assert.throws(() => readConfig(env), /BOT_INTERNAL_SECRET/);
   assert.throws(() => readConfig({ ...env, BOT_INTERNAL_SECRET: 'short' }), /BOT_INTERNAL_SECRET/);
   assert.equal(readConfig({ ...env, BOT_INTERNAL_SECRET: secret }).botInternalSecret, secret);
 });
+
+for (const requireMembership of [false, true]) {
+  test(`registered bot completes a browser login with group checks ${requireMembership ? 'on' : 'off'}`, { timeout: 8000 }, async t => {
+    const origin = 'http://localhost:5173';
+    const config = readConfig({
+      APP_ORIGIN: origin, DATABASE_URL: 'postgres://localhost/klan',
+      BOT_INTERNAL_SECRET: secret, TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: String(requireMembership),
+      TELEGRAM_GROUP_IDS: requireMembership ? '-1001' : '',
+    });
+    const { app } = createApp(new MemoryRepository(), config);
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+    t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${secret}` };
+    const service = (path: string, body: unknown, signal?: AbortSignal) => fetch(`${base}/internal/telegram/${path}`, {
+      method: 'POST', headers, body: JSON.stringify(body), signal,
+    });
+    const authConfig = async () => (await (await fetch(`${base}/api/auth/config`)).json()).data;
+    const startLogin = () => fetch(`${base}/api/auth/telegram/start`, {
+      method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}',
+    });
+    assert.equal((await authConfig()).botUsername, null);
+    assert.equal((await startLogin()).status, 503);
+    assert.equal((await service('commands', { id: 123, username: 'wrong/path' })).status, 400);
+    const identity = { id: 123, username: 'discovered_test_bot' };
+    const commandLoop = new AbortController();
+    t.after(() => commandLoop.abort());
+    const methods: string[] = [];
+    const work = (async () => {
+      while (!commandLoop.signal.aborted) {
+        const response = await service('commands', identity, commandLoop.signal);
+        assert.equal(response.status, 200);
+        const { data: { commands } } = await response.json();
+        for (const command of commands) {
+          methods.push(command.method);
+          const result = command.method === 'getChatMember' ? { ok: true, result: { status: 'member' } } : { ok: true };
+          assert.equal((await service('command-result', { botId: identity.id, id: command.id, response: result })).status, 204);
+        }
+      }
+    })();
+    // Abort errors are expected at shutdown. Test failures during the loop still fail the test.
+    const workerDone = work.catch(error => { if (!commandLoop.signal.aborted) throw error; });
+    t.after(() => workerDone);
+    try {
+      for (let index = 0; index < 30 && (await authConfig()).botUsername === null; index++) await delay(10);
+      assert.equal((await authConfig()).botUsername, identity.username);
+      const start = await startLogin();
+      assert.equal(start.status, 200);
+      const { data } = await start.json();
+      assert.equal(new URL(data.botUrl).pathname, `/${identity.username}`);
+      const browserCookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
+      const updateWithCode = { ...update, message: { ...update.message, text: `/start ${data.id}` } };
+      assert.equal((await service('updates', updateWithCode)).status, 200);
+      const status = await fetch(`${base}/api/auth/telegram/status/${data.id}`, { headers: { cookie: browserCookie } });
+      assert.equal((await status.json()).data.status, 'approved');
+      assert.ok(status.headers.getSetCookie().some(cookie => cookie.startsWith('klan_session=')));
+      assert.deepEqual(methods, requireMembership ? ['getChatMember', 'sendMessage', 'getChatMember'] : ['sendMessage']);
+    } finally {
+      commandLoop.abort();
+      await workerDone;
+    }
+  });
+}

@@ -10,7 +10,7 @@ import { hashToken } from './auth.js';
 import type { Config } from './config.js';
 
 const config: Config = { port: 0, demo: false, production: false, origin: 'http://localhost:5173',
-  botToken: 'fake-test-token', botUsername: 'test_bot', telegramGroups: ['-1001', '-1002', '-1003'],
+  botInternalSecret: 'admin-tests-service-secret-'.repeat(2), telegramGroups: ['-1001', '-1002', '-1003'],
   telegramGroupLevels: { '-1001': 'member', '-1002': 'moderator', '-1003': 'admin' },
   adminTelegramIds: [], sessionTtlMs: 60000 };
 
@@ -23,17 +23,13 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
       state.sessions[hashToken(tokens[index]!)] = { userId: `user-${index + 1}`, expiresAt: new Date(Date.now() + 60000).toISOString() };
     }
   });
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).startsWith('https://api.telegram.org/')) {
-      const payload = JSON.parse(String(init?.body));
-      const group = ({ '1': '-1003', '2': '-1001', '3': '-1002' } as Record<string, string>)[String(payload.user_id)];
-      return Response.json({ ok: true, result: { status: payload.chat_id === group ? 'member' : 'left' } });
-    }
-    return originalFetch(input, init);
-  };
-  t.after(() => { globalThis.fetch = originalFetch; });
-  const { app } = createApp(repo, config);
+  const { app } = createApp(repo, config, undefined, {
+    async telegramRequest<T>(_method: string, payload: object) {
+      const { chat_id, user_id } = payload as { chat_id: string; user_id: number };
+      const group = ({ '1': '-1003', '2': '-1001', '3': '-1002' } as Record<string, string>)[String(user_id)];
+      return { status: chat_id === group ? 'member' : 'left' } as T;
+    },
+  });
   const server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;

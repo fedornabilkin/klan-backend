@@ -104,7 +104,7 @@ test('invalid tags and failed writes do not change profiles or the catalog', asy
 test('profile tag API supports ordinary members, public IDs, permission checks and realtime invalidation', async t => {
   const initial = fixture();
   initial.users[1]!.publicId = 2;
-  const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: [], botToken: 'not-a-real-token', adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-2', demoAccessLevel: 'member' };
+  const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: [], adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-2', demoAccessLevel: 'member' };
   const repo = new MemoryRepository(initial);
   const messages: Parameters<Broadcast>[0][] = [];
   const { app } = createApp(repo, config, message => messages.push(message));

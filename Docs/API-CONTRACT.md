@@ -2,7 +2,7 @@
 
 Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health and auth require HTTP-only cookie session. Errors `{error:{code,message}}`. Success `{data:T}`, list `{data:T[],meta:{page,limit,total,pages}}`. Dates ISO. IDs strings. Every server mutation validates input and emits activity + WebSocket invalidation after committing.
 
-- GET /health; GET /auth/config -> {demo,botUsername}; POST /auth/demo -> User (development only)
+- GET /health; GET /auth/config -> {demo,botUsername}, with a null username until the bot connects; POST /auth/demo -> User (development only)
 - GET /auth/me -> User; POST /auth/logout
 - POST /auth/telegram/start -> {id,botUrl,expiresAt}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'denied',user?:User} (sets session on approval)
 - GET /users|events|teams|challenges|news|feedback|books|rules with page,limit,q,sort (`name`, `-name`, `createdAt`, `-createdAt`),status,category,tag (comma separated),city
@@ -19,6 +19,6 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - GET /users/me/export -> own profile JSON; POST /users/me/import {profile:{name,bio,location,facts,interests,achievements,tags}} -> User
 - WebSocket /ws with session cookie. Messages `{type:'invalidate',resource:string}` or `{type:'activity',data:Activity}`. Client refetches only affected data.
 
-The bot uses a separate internal route outside `/api`: `POST /internal/telegram/updates`. It requires `Authorization: Bearer <BOT_INTERNAL_SECRET>` and a validated Telegram update JSON body. Browser cookies do not grant access to this route. It must not be exposed by the public gateway. See [architecture.md](architecture.md).
+The bot uses JSON POST requests under `/internal/telegram` with `Authorization: Bearer <BOT_INTERNAL_SECRET>`. `/updates` accepts a Telegram update, `/commands` registers the bot identity and waits up to 20 seconds for work, and `/command-result` acknowledges a command. The public gateway must block the entire prefix. See [architecture.md](architecture.md).
 
 Frontend routes: /login, /, /users, /users/:id, /events, /events/:id, /teams, /teams/:id, /challenges, /challenges/:id, /news, /news/:id, /feedback, /feedback/:id, /books, /books/:id, /rules, /rules/:id, /stats, /admin, /profile/import.

@@ -6,7 +6,7 @@ import type { Config } from './config.js';
 import type { User } from './shared/contracts.js';
 
 const user: User = { id: 'telegram-member', name: 'Участник', role: 'member', bio: '', initials: 'У', color: '#f97316', location: { city: '', country: '', lat: 0, lng: 0 }, tags: [], facts: [], interests: [], achievements: [], stats: { events: 0, challenges: 0, books: 0 }, joinedAt: '2026-11-11T00:00:00.000Z' };
-const base: Config = { demo: false, production: false, port: 0, origin: 'http://localhost', botToken: 'test-only-not-real', botUsername: 'klan_test_bot', telegramGroups: ['-1001', '-1002'], adminTelegramIds: [], sessionTtlMs: 3600000, membershipTtlMs: 15000, telegramGroupLevels: { '-1002': 'moderator' } };
+const base: Config = { demo: false, production: false, port: 0, origin: 'http://localhost', botInternalSecret: 'security-test-secret-'.repeat(2), telegramGroups: ['-1001', '-1002'], adminTelegramIds: [], sessionTtlMs: 3600000, membershipTtlMs: 15000, telegramGroupLevels: { '-1002': 'moderator' } };
 
 test('Existing session is downgraded when elevated group is left and revoked when all memberships end', async () => {
   let clock = Date.parse('2026-11-11T12:00:00Z');

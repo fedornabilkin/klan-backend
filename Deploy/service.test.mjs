@@ -36,7 +36,6 @@ function runtime(overrides = {}) {
     NODE_ENV: 'production', APP_ORIGIN: 'https://klan.example.test', DEMO_MODE: 'false',
     POSTGRES_DB: 'klan_test', POSTGRES_USER: 'test_user', POSTGRES_PASSWORD: password,
     DATABASE_URL: `postgresql://test_user:${encodeURIComponent(password)}@db:5432/klan_test`,
-    TELEGRAM_BOT_TOKEN: 'synthetic-token', TELEGRAM_BOT_USERNAME: 'synthetic_bot',
     TELEGRAM_GROUP_IDS: '-12345', BOT_INTERNAL_SECRET: 'x'.repeat(40),
     ...overrides,
   };

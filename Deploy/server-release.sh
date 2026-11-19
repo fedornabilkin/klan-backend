@@ -124,7 +124,8 @@ if [[ "$operation" == deploy ]]; then
   IFS= read -r git_token || fail 'Missing repository token on stdin'
   [[ -n "$git_token" ]] || fail 'Empty repository token'
   scratch="$(mktemp -d "$deploy_root/.source-XXXXXX")"
-  cp -- "$runtime_source" "$scratch/runtime.env"
+  # Older server files or GitHub overrides may still have bot-only credentials.
+  sed -E '/^[[:space:]]*(TELEGRAM_BOT_TOKEN|TELEGRAM_BOT_USERNAME)[[:space:]]*=/d' "$runtime_source" > "$scratch/runtime.env"
   chmod 600 "$scratch/runtime.env"
   cat > "$scratch/askpass" <<'ASKPASS'
 #!/bin/sh

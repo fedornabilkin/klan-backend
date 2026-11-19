@@ -14,6 +14,7 @@ const admin: User = {
   tags: [], facts: [], interests: [], achievements: [], stats: { events: 0, challenges: 0, books: 0 },
   joinedAt: new Date().toISOString(),
 };
+const serviceSecret = 'test-service-secret-'.repeat(3);
 
 async function fixture(overrides: Partial<Config> = {}, dependencies: AuthDependencies = {}) {
   const state = emptyState();
@@ -24,7 +25,7 @@ async function fixture(overrides: Partial<Config> = {}, dependencies: AuthDepend
     demoUserId: admin.id, demoAccessLevel: 'admin',
     sessionTtlMs: 60_000, ...overrides,
   };
-  const auth = createAuth(repo, config, undefined, dependencies);
+  const auth = createAuth(repo, config, undefined, { botUsername: () => 'test_bot', ...dependencies });
   const app = express();
   app.use(express.json());
   app.use('/api/auth', auth.router);
@@ -86,7 +87,7 @@ test('Demo entry remains disabled in production even if incorrectly configured',
 test('Production account-only sign-in still needs bot approval and respects explicit admin IDs', async () => {
   const config = readConfig({
     NODE_ENV: 'production', APP_ORIGIN: 'https://192.0.2.33:8443', DATABASE_URL: 'postgresql://db/klan',
-    TELEGRAM_BOT_TOKEN: 'test-only', TELEGRAM_BOT_USERNAME: 'klan_test_bot', BOT_INTERNAL_SECRET: 'test-secret'.repeat(4),
+    BOT_INTERNAL_SECRET: serviceSecret,
     TELEGRAM_REQUIRE_GROUP_MEMBERSHIP: 'false', TELEGRAM_ADMIN_IDS: '12345',
   });
   const telegramCalls: string[] = [];
@@ -155,7 +156,7 @@ test('Demo never falls back to the first admin when the configured profile is mi
 });
 
 test('Demo access defaults to member and cannot elevate a Telegram session', async () => {
-  const f = await fixture({ demoAccessLevel: undefined, botToken: 'not-real', telegramGroups: ['-100123'] }, memberTelegram);
+  const f = await fixture({ demoAccessLevel: undefined, botInternalSecret: serviceSecret, telegramGroups: ['-100123'] }, memberTelegram);
   try {
     const response = await fetch(`${f.base}/demo`, { method: 'POST' });
     assert.equal((await response.json()).data.access.level, 'member', 'stored admin role does not elevate default demo');
@@ -164,7 +165,7 @@ test('Demo access defaults to member and cannot elevate a Telegram session', asy
       state.telegramUsers['12345'] = admin.id;
       state.sessions[hashToken(token)] = { userId: admin.id, expiresAt: new Date(Date.now() + 60000).toISOString(), source: 'telegram' };
     });
-    const elevatedDemo = createAuth(f.repo, { demo: true, production: false, port: 0, origin: 'http://localhost', telegramGroups: ['-100123'], botToken: 'not-real', adminTelegramIds: [], sessionTtlMs: 60000, demoUserId: admin.id, demoAccessLevel: 'admin' }, undefined, memberTelegram);
+    const elevatedDemo = createAuth(f.repo, { demo: true, production: false, port: 0, origin: 'http://localhost', telegramGroups: ['-100123'], botInternalSecret: serviceSecret, adminTelegramIds: [], sessionTtlMs: 60000, demoUserId: admin.id, demoAccessLevel: 'admin' }, undefined, memberTelegram);
     const principal = await elevatedDemo.userFromCookie(`klan_session=${token}`);
     assert.equal(principal?.access?.source, 'telegram');
     assert.equal(principal?.access?.level, 'member');
@@ -185,7 +186,7 @@ test('Session expiry and fabricated cookies cannot authenticate', async () => {
 });
 
 test('Telegram approval belongs to its initiating browser and can be consumed once', async () => {
-  const f = await fixture({ botToken: 'not-a-real-token', botUsername: 'test_bot', telegramGroups: ['-100123'] }, memberTelegram);
+  const f = await fixture({ botInternalSecret: serviceSecret, telegramGroups: ['-100123'] }, memberTelegram);
   try {
     const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
     assert.equal(start.status, 200);
@@ -209,7 +210,7 @@ test('Telegram approval belongs to its initiating browser and can be consumed on
 });
 
 test('Session validation synchronizes configured Telegram admin role with stored profile', async () => {
-  const f = await fixture({ demo: false, botToken: 'not-a-real-token', telegramGroups: ['-100123'], adminTelegramIds: [] }, memberTelegram);
+  const f = await fixture({ demo: false, botInternalSecret: serviceSecret, telegramGroups: ['-100123'], adminTelegramIds: [] }, memberTelegram);
   try {
     const token = 'd'.repeat(64);
     await f.repo.write((state) => {
@@ -224,7 +225,7 @@ test('Session validation synchronizes configured Telegram admin role with stored
 });
 
 test('Production bot approval uses secure cookies, exposes computed access, and cannot be replayed', async () => {
-  const f = await fixture({ demo: false, production: true, origin: 'https://klan.example.org', botToken: 'not-a-real-token', botUsername: 'test_bot', telegramGroups: ['-100123'], telegramGroupLevels: { '-100123': 'moderator' } }, memberTelegram);
+  const f = await fixture({ demo: false, production: true, origin: 'https://klan.example.org', botInternalSecret: serviceSecret, telegramGroups: ['-100123'], telegramGroupLevels: { '-100123': 'moderator' } }, memberTelegram);
   try {
     const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
     assert.equal(start.status, 200);
@@ -252,7 +253,7 @@ test('Production bot approval uses secure cookies, exposes computed access, and 
 test('Membership is rechecked between bot approval and session issuance', async () => {
   let member = true;
   const dependencies: AuthDependencies = { telegramRequest: async <T>() => ({ status: member ? 'member' : 'left' }) as T };
-  const f = await fixture({ demo: false, botToken: 'not-a-real-token', botUsername: 'test_bot', telegramGroups: ['-100123'] }, dependencies);
+  const f = await fixture({ demo: false, botInternalSecret: serviceSecret, telegramGroups: ['-100123'] }, dependencies);
   try {
     const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
     const browserCookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
