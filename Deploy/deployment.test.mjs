@@ -61,6 +61,10 @@ fi
 if [[ "$1" == build ]]; then
   [[ ! -v KLAN_GIT_TOKEN ]] || { printf 'Git token leaked to build\\n' >&2; exit 97; }
   printf 'docker:build\\n' >> "$TEST_LOG"
+  if [[ "$*" == *'--build-arg CI_COMPILED=1'* ]]; then
+    [[ -s "\${!#}/Project/src/.ci-dist/server.js" && -s "\${!#}/Project/src/.ci-dist/config.js" ]] || exit 95
+    printf 'checked-dist\\n' >> "$TEST_LOG"
+  fi
   if [[ "$2" == --network ]]; then
     [[ -f "\${!#}/.dockerignore" && ! -e "\${!#}/runtime.env" ]] || exit 96
     printf 'build-network:%s:buildkit=%s\\n' "$3" "\${DOCKER_BUILDKIT:-}" >> "$TEST_LOG"
@@ -100,6 +104,7 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
   write(join(source, 'Docker', 'compose.production.yaml'), 'services: {}\n');
   write(join(source, 'Docker', 'Dockerfile'), 'FROM scratch\n');
   write(join(source, 'Docker', 'Dockerfile.dockerignore'), '*\n');
+  write(join(source, 'Project', 'src', 'server.ts'), 'export {};\n');
   write(join(source, 'fixture-name'), 'new');
   write(join(source, 'tracked-source'), 'This file must come from git archive.\n');
   shell('git init -b main "$1" >/dev/null && git -C "$1" add . && git -C "$1" -c user.name=Test -c user.email=test@example.test commit -m Initial >/dev/null', [shellPath(source)]);
@@ -112,7 +117,7 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
   write(join(incoming, 'runtime.env'), 'SYNTHETIC_CONFIGURATION=only\n');
   function command(script, args = [], extra = {}, input = '') {
     return spawnSync(bash, ['-c', 'export PATH="$TEST_BIN:$PATH"; exec bash "$@"', 'test', shellPath(script), ...args], {
-      env: { ...environment, ...extra }, input, encoding: 'utf8', timeout: 15_000,
+      env: { ...environment, ...extra }, input, encoding: 'utf8', timeout: process.platform === 'win32' ? 60_000 : 15_000,
     });
   }
   function shell(code, args = []) {
@@ -165,6 +170,15 @@ const transportEnvironment = {
   GITHUB_SHA: 'b'.repeat(40), GITHUB_RUN_ID: '2', GITHUB_RUN_ATTEMPT: '1',
   GIT_TOKEN: 'synthetic-token',
 };
+
+test('deploys the JavaScript built by CI with the isolated build network', { skip: unavailable }, context => {
+  const fixture = harness(context);
+  fixture.shared('build-network', 'klan-build\n');
+  for (const file of ['config.js', 'server.js']) write(join(fixture.incoming, 'compiled', file), 'export {};\n');
+  const result = fixture.deploy();
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(fixture.log().includes('checked-dist'));
+});
 
 for (const [setting, value, expected] of [
   ['DEPLOY_HOST', "host'; touch /tmp/forbidden", 'Invalid SSH host'],

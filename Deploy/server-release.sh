@@ -180,6 +180,13 @@ ASKPASS
       git --git-dir="$repository" archive --format=tar "$sha" | tar -xf - -C "$build_context"
       cp -- "$build_context/Docker/Dockerfile.dockerignore" "$build_context/.dockerignore"
     fi
+    if [[ -e "$request_dir/compiled" ]]; then
+      compiled="$request_dir/compiled"
+      [[ -d "$compiled" && ! -L "$compiled" && -s "$compiled/server.js" && -s "$compiled/config.js" ]] || fail 'Invalid compiled API'
+      [[ -z "$(find "$compiled" ! -type d ! \( -type f \( -name '*.js' -o -name '*.js.map' \) \) -print -quit)" ]] || fail 'Unexpected compiled file'
+      cp -R -- "$compiled" "$build_context/Project/src/.ci-dist"
+      build_command+=(--build-arg CI_COMPILED=1)
+    fi
     "${build_command[@]}" --file "$build_context/Docker/Dockerfile" --tag "$IMAGE_REF" \
       --label "org.opencontainers.image.revision=$sha" "$build_context"
   fi

@@ -23,6 +23,10 @@ scratch="$(mktemp -d)"
 cleanup() { rm -rf -- "$scratch"; }
 trap cleanup EXIT
 mkdir -p "$scratch/payload/Deploy"
+if [[ -n "${CHECKED_DIST:-}" ]]; then
+  [[ -s "$CHECKED_DIST/server.js" && -s "$CHECKED_DIST/config.js" ]] || fail 'Incomplete compiled API'
+  cp -R -- "$CHECKED_DIST" "$scratch/payload/compiled"
+fi
 printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$scratch/key"
 printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$scratch/known_hosts"
 if [[ -n "${PRODUCTION_ENV:-}" ]]; then

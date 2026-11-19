@@ -39,6 +39,15 @@ jobs:
           npm run build
           npm run typecheck:tools
           npm run test:tools
+      - name: Сохранить скомпилированный API для VPS
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-js-${{ github.sha }}
+          path: Project/dist/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
       - name: Проверить скрипты выкладки
         run: |
           for script in Deploy/*.sh; do bash -n "$script"; done
@@ -72,8 +81,13 @@ jobs:
             echo "В main уже есть новый коммит. Запустите Production для актуальной main." >&2
             exit 1
           fi
-      - name: Обновить исходники и собрать на сервере
+      - uses: actions/download-artifact@v8
+        with:
+          name: backend-js-${{ github.sha }}
+          path: ${{ runner.temp }}/klan-compiled
+      - name: Обновить исходники и запустить проверенную сборку
         env:
+          CHECKED_DIST: ${{ runner.temp }}/klan-compiled
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}

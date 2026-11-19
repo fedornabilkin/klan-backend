@@ -1,10 +1,11 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY Project/package.json Project/package-lock.json ./
-RUN npm ci
+ARG CI_COMPILED=0
+RUN if [ "$CI_COMPILED" = 1 ]; then npm ci --omit=dev --no-audit --no-fund; else npm ci; fi
 COPY Project/tsconfig.json ./
 COPY Project/src ./src
-RUN npm run build && npm prune --omit=dev
+RUN if [ "$CI_COMPILED" = 1 ]; then mv src/.ci-dist dist; else npm run build && npm prune --omit=dev; fi
 
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production PORT=3001
