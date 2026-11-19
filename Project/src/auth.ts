@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { Router, type RequestHandler, type Response } from 'express';
 import type { User } from './shared/contracts.js';
 import type { Config } from './config.js';
-import type { Repository } from './repository.js';
+import type { DatabaseState, Repository } from './repository.js';
 import { HttpError } from './errors.js';
 import { hydrateUser } from './domain.js';
 import { accessForLevel, resolveTelegramAccess } from './access.js';
@@ -25,6 +25,13 @@ type TelegramCallback = {
 export type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallback };
 type TelegramMember = { status: string; is_member?: boolean };
 const authLifetimeMs = 5 * 60 * 1000;
+const moscowTime = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+function formatTime(timestamp: string | number): string {
+  return `${moscowTime.format(new Date(timestamp))} МСК`;
+}
 export interface AuthDependencies {
   now?: () => number;
   botUsername?: () => string | undefined;
@@ -75,6 +82,11 @@ export function createAuth(
   const membershipChecks = new Map<string, { expiresAt: number; access: AccessSummary | undefined }>();
   const pendingChecks = new Map<string, Promise<AccessSummary | undefined>>();
   const requireMembership = config.telegramGroupMembershipRequired !== false;
+
+  function requestDetails(request: DatabaseState['authRequests'][string]): string {
+    const requestedAt = request.requestedAt ?? Date.parse(request.expiresAt) - authLifetimeMs;
+    return `Сайт: ${request.origin ?? config.origin}\nВремя запроса: ${formatTime(requestedAt)}`;
+  }
 
   async function telegram<T>(method: TelegramMethod, payload: object): Promise<T> {
     try {
@@ -234,12 +246,16 @@ export function createAuth(
       const id = randomBytes(24).toString('hex');
       const displayCode = String(randomInt(1_000_000)).padStart(6, '0');
       const browserToken = randomBytes(32).toString('hex');
-      const expiresAt = new Date(now() + authLifetimeMs).toISOString();
+      const created = now();
+      const expiresAt = new Date(created + authLifetimeMs).toISOString();
       await repo.write((state) => {
         for (const [key, request] of Object.entries(state.authRequests)) {
           if (Date.parse(request.expiresAt) <= now()) delete state.authRequests[key];
         }
-        state.authRequests[id] = { browserHash: hashToken(browserToken), expiresAt, status: 'pending', displayCode };
+        state.authRequests[id] = {
+          browserHash: hashToken(browserToken), expiresAt, status: 'pending', displayCode,
+          origin: config.origin, requestedAt: new Date(created).toISOString(),
+        };
       });
       res.cookie(browserCookie, browserToken, { ...cookieOptions, maxAge: authLifetimeMs });
       res.json({ data: { id, botUrl: `https://t.me/${botUsername}?start=${id}`, expiresAt, displayCode } });
@@ -317,7 +333,7 @@ export function createAuth(
       if (request.telegramId && request.telegramId !== telegramId) return 'other' as const;
       if (request.promptMessageId) return 'sent' as const;
       request.telegramId = telegramId;
-      return { code: request.displayCode };
+      return { code: request.displayCode, details: requestDetails(request) };
     });
     if (prompt === 'closed') {
       await telegram('sendMessage', { chat_id: message.chat.id, text: 'Ссылка входа истекла или уже использована. Вернитесь на сайт KLAN и начните вход заново.' });
@@ -331,7 +347,7 @@ export function createAuth(
     }
     const receipt = await telegram<{ message_id: number }>('sendMessage', {
       chat_id: message.chat.id,
-      text: `Запрос на вход в Клан.\nКод подтверждения: ${prompt.code}\n\nСверьте код с кодом на сайте. Подтверждайте только свой запрос. Если вы не начинали вход, нажмите «Отклонить». Никому не пересылайте ссылку на вход.`,
+      text: `Запрос на вход в Клан.\n${prompt.details}\nКод подтверждения: ${prompt.code}\n\nСверьте код с кодом на сайте. Подтверждайте только свой запрос. Если вы не начинали вход, нажмите «Отклонить». Никому не пересылайте ссылку на вход.`,
       reply_markup: { inline_keyboard: [[
         { text: 'Авторизоваться', callback_data: `ok:${requestId}` },
         { text: 'Отклонить', callback_data: `no:${requestId}` },
@@ -364,12 +380,14 @@ export function createAuth(
       ? await telegramAccess(telegramId, true) : undefined;
     const outcome = await repo.write((state) => {
       const current = state.authRequests[requestId];
+      const decisionTime = now();
       if (!current || current.telegramId !== telegramId || current.promptMessageId !== message.message_id
-        || Date.parse(current.expiresAt) <= now()) return 'expired';
-      if (current.status !== 'pending') return current.status;
+        || Date.parse(current.expiresAt) <= decisionTime) return { status: 'expired' } as const;
+      if (current.status !== 'pending') return { status: current.status, decidedAt: current.decidedAt };
+      current.decidedAt = new Date(decisionTime).toISOString();
       if (!access) {
         current.status = wantsApproval ? 'denied' : 'rejected';
-        return current.status;
+        return { status: current.status, decidedAt: current.decidedAt };
       }
       let user = state.users.find((candidate) => candidate.id === state.telegramUsers[telegramId]);
       const role = access.level === 'admin' ? 'admin' as const : 'member' as const;
@@ -391,7 +409,7 @@ export function createAuth(
       }
       current.status = 'approved';
       current.userId = user.id;
-      return 'approved';
+      return { status: current.status, decidedAt: current.decidedAt };
     });
     const resultText = {
       approved: 'Вход в Клан подтверждён. Вернитесь в браузер, в котором начали вход.',
@@ -399,7 +417,15 @@ export function createAuth(
       denied: 'Не удалось подтвердить доступ к Клану. Если ошибка повторяется, обратитесь к администратору.',
       expired: 'Запрос закрыт. Вернитесь на сайт и начните вход заново.',
     };
-    await telegram('editMessageText', { chat_id: message.chat.id, message_id: message.message_id, text: resultText[outcome] }).catch(() => undefined);
+    const lines = [resultText[outcome.status], requestDetails(request)];
+    if (outcome.decidedAt) {
+      const label = outcome.status === 'approved' ? 'Время подтверждения' : 'Время отказа';
+      lines.push(`${label}: ${formatTime(outcome.decidedAt)}`);
+    }
+    const text = lines.join('\n');
+    await telegram('editMessageText', { chat_id: message.chat.id, message_id: message.message_id, text }).catch(async () => {
+      if (request.status === 'pending') await telegram('sendMessage', { chat_id: message.chat.id, text });
+    });
   }
 
   async function handleTelegramUpdate(update: TelegramUpdate): Promise<void> {

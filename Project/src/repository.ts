@@ -11,6 +11,7 @@ export interface DatabaseState {
   authRequests: Record<string, {
     browserHash: string; expiresAt: string; status: 'pending' | 'approved' | 'rejected' | 'denied'; userId?: string;
     displayCode?: string; telegramId?: string; promptMessageId?: number;
+    origin?: string; requestedAt?: string; decidedAt?: string;
   }>;
 }
 export interface Repository {

@@ -132,6 +132,37 @@ test('Production account-only sign-in still needs bot approval and respects expl
   } finally { await f.close(); }
 });
 
+test('Telegram shows the site and request time, then keeps the time of the first decision', async () => {
+  for (const approve of [true, false]) {
+    const origin = approve ? 'https://192.0.2.33:8443' : 'http://localhost:5173';
+    let clock = Date.parse('2026-11-18T20:59:00Z');
+    const messages: string[] = [];
+    const f = await fixture({ origin, botInternalSecret: serviceSecret, telegramGroupMembershipRequired: false }, {
+      now: () => clock,
+      telegramRequest: async <T>(method: string, payload: object) => {
+        if ('text' in payload) messages.push(String(payload.text));
+        return { message_id: telegramMessageId } as T;
+      },
+    });
+    try {
+      const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
+      const { data } = await start.json();
+      clock += 30_000;
+      const respond = await openInTelegram(f.auth, data.id, { id: 12345, first_name: 'Участник' });
+      const details = `Сайт: ${origin}\nВремя запроса: 18.11.2026, 23:59:00 МСК`;
+      assert.ok(messages[0]?.includes(details));
+      clock += 75_000;
+      await respond(approve);
+      assert.ok(messages[1]?.includes(details));
+      const label = approve ? 'Время подтверждения' : 'Время отказа';
+      assert.ok(messages[1]?.includes(`${label}: 19.11.2026, 00:00:45 МСК`));
+      clock += 5_000;
+      await respond(!approve);
+      assert.equal(messages[2], messages[1]);
+    } finally { await f.close(); }
+  }
+});
+
 test('Demo selects only the configured profile and grants privileges only to its session', async () => {
   const romanId = 'pcm-2bd1e6d2-7b1f-447f-848b-f84cf302fa53';
   const f = await fixture({ demoUserId: romanId, demoAccessLevel: 'admin' });
