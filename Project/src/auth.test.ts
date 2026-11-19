@@ -39,7 +39,18 @@ async function fixture(overrides: Partial<Config> = {}, dependencies: AuthDepend
   return { repo, auth, base, close: () => { server.closeAllConnections(); return new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); } };
 }
 
-const memberTelegram: AuthDependencies = { telegramRequest: async <T>() => ({ status: 'member' }) as T };
+const telegramMessageId = 42;
+const memberTelegram: AuthDependencies = { telegramRequest: async <T>(method: string) =>
+  (method === 'sendMessage' ? { message_id: telegramMessageId } : { status: 'member' }) as T };
+
+async function openInTelegram(auth: ReturnType<typeof createAuth>, id: string, user: { id: number; first_name: string }) {
+  const chat = { id: user.id, type: 'private' };
+  await auth.handleTelegramUpdate({ update_id: user.id, message: { from: user, chat, text: `/start ${id}` } });
+  return (approve: boolean, messageId = telegramMessageId) => auth.handleTelegramUpdate({
+    update_id: user.id + 1,
+    callback_query: { id: 'synthetic-callback', from: user, data: `${approve ? 'ok' : 'no'}:${id}`, message: { message_id: messageId, chat } },
+  });
+}
 
 test('Telegram membership excludes left, kicked and restricted non-members', () => {
   for (const status of ['creator', 'administrator', 'member']) assert.equal(isTelegramMember({ status }), true);
@@ -93,7 +104,7 @@ test('Production account-only sign-in still needs bot approval and respects expl
   const telegramCalls: string[] = [];
   const f = await fixture(config, { telegramRequest: async <T>(method: string) => {
     telegramCalls.push(method);
-    return {} as T;
+    return { message_id: telegramMessageId } as T;
   } });
   try {
     for (const [telegramId, role] of [[64321, 'member'], [12345, 'admin']] as const) {
@@ -106,7 +117,9 @@ test('Production account-only sign-in still needs bot approval and respects expl
       assert.equal((await pending.json()).data.status, 'pending');
       assert.equal(pending.headers.get('set-cookie'), null);
 
-      await f.auth.handleTelegramUpdate({ update_id: telegramId, message: { from: { id: telegramId, first_name: 'Участник' }, chat: { id: telegramId, type: 'private' }, text: `/start ${data.id}` } });
+      const respond = await openInTelegram(f.auth, data.id, { id: telegramId, first_name: 'Участник' });
+      assert.equal((await (await fetch(statusUrl, { headers: { cookie: browserCookie } })).json()).data.status, 'pending');
+      await respond(true);
       const approved = await fetch(statusUrl, { headers: { cookie: browserCookie } });
       const body = await approved.json();
       assert.equal(body.data.status, 'approved');
@@ -115,7 +128,7 @@ test('Production account-only sign-in still needs bot approval and respects expl
       assert.match(session, /; Secure/);
       assert.equal((await f.auth.userFromCookie(session.split(';')[0]))?.access?.level, role);
     }
-    assert.deepEqual(telegramCalls, ['sendMessage', 'sendMessage']);
+    assert.deepEqual(telegramCalls, ['sendMessage', 'answerCallbackQuery', 'editMessageText', 'sendMessage', 'answerCallbackQuery', 'editMessageText']);
   } finally { await f.close(); }
 });
 
@@ -235,7 +248,7 @@ test('Production bot approval uses secure cookies, exposes computed access, and 
     assert.match(cookieHeader, /; HttpOnly/);
     const browserCookie = cookieHeader.split(';')[0]!;
     const { data } = await start.json();
-    await f.auth.handleTelegramUpdate({ update_id: 1, message: { from: { id: 12345, first_name: 'Новый участник' }, chat: { id: 12345, type: 'private' }, text: `/start ${data.id}` } });
+    await (await openInTelegram(f.auth, data.id, { id: 12345, first_name: 'Новый участник' }))(true);
     const approved = await fetch(`${f.base}/telegram/status/${data.id}`, { headers: { cookie: browserCookie } });
     const body = await approved.json();
     assert.equal(body.data.status, 'approved');
@@ -252,17 +265,49 @@ test('Production bot approval uses secure cookies, exposes computed access, and 
 
 test('Membership is rechecked between bot approval and session issuance', async () => {
   let member = true;
-  const dependencies: AuthDependencies = { telegramRequest: async <T>() => ({ status: member ? 'member' : 'left' }) as T };
+  const dependencies: AuthDependencies = { telegramRequest: async <T>(method: string) =>
+    (method === 'sendMessage' ? { message_id: telegramMessageId } : { status: member ? 'member' : 'left' }) as T };
   const f = await fixture({ demo: false, botInternalSecret: serviceSecret, telegramGroups: ['-100123'] }, dependencies);
   try {
     const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
     const browserCookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
     const { data } = await start.json();
-    await f.auth.handleTelegramUpdate({ update_id: 1, message: { from: { id: 12345, first_name: 'Участник' }, chat: { id: 12345, type: 'private' }, text: `/start ${data.id}` } });
+    await (await openInTelegram(f.auth, data.id, { id: 12345, first_name: 'Участник' }))(true);
     member = false;
     const denied = await fetch(`${f.base}/telegram/status/${data.id}`, { headers: { cookie: browserCookie } });
     assert.equal((await denied.json()).data.status, 'denied');
     assert.ok(!denied.headers.getSetCookie().some(value => value.startsWith('klan_session=')));
+    assert.equal(await f.repo.read(state => Object.keys(state.sessions).length), 0);
+  } finally { await f.close(); }
+});
+
+test('Telegram denial is final, forged button messages cannot approve, and the browser can cancel', async () => {
+  const f = await fixture({ botInternalSecret: serviceSecret, telegramGroupMembershipRequired: false }, memberTelegram);
+  try {
+    const user = { id: 1234, first_name: 'Участник' };
+    async function startRequest() {
+      const start = await fetch(`${f.base}/telegram/start`, { method: 'POST' });
+      const cookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
+      const { data } = await start.json();
+      assert.match(data.displayCode, /^\d{6}$/);
+      return { id: data.id as string, headers: { cookie } };
+    }
+    const request = await startRequest();
+    const respond = await openInTelegram(f.auth, request.id, user);
+    const url = `${f.base}/telegram/status/${request.id}`;
+    await respond(true, 999);
+    assert.equal((await (await fetch(url, { headers: request.headers })).json()).data.status, 'pending');
+    await respond(false);
+    await respond(true);
+    const rejected = await fetch(url, { headers: request.headers });
+    assert.equal((await rejected.json()).data.status, 'rejected');
+    assert.equal(rejected.headers.getSetCookie().length, 0);
+    const cancelled = await startRequest();
+    const approveCancelled = await openInTelegram(f.auth, cancelled.id, user);
+    assert.equal((await fetch(`${f.base}/telegram/cancel/${cancelled.id}`, { method: 'POST', headers: cancelled.headers })).status, 204);
+    await approveCancelled(true);
+    assert.equal((await (await fetch(`${f.base}/telegram/status/${cancelled.id}`, { headers: cancelled.headers })).json()).data.status, 'expired');
+    assert.equal(await f.repo.read(state => Object.keys(state.telegramUsers).length), 0);
     assert.equal(await f.repo.read(state => Object.keys(state.sessions).length), 0);
   } finally { await f.close(); }
 });

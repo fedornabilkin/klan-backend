@@ -4,7 +4,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 
 - GET /health; GET /auth/config -> {demo,botUsername}, with a null username until the bot connects; POST /auth/demo -> User (development only)
 - GET /auth/me -> User; POST /auth/logout
-- POST /auth/telegram/start -> {id,botUrl,expiresAt}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'denied',user?:User} (sets session on approval)
+- POST /auth/telegram/start -> {id,botUrl,expiresAt,displayCode}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'rejected'|'denied',user?:User} (sets session after approval in Telegram); POST /auth/telegram/cancel/:id -> 204 (cancels the initiating browser's request)
 - GET /users|events|teams|challenges|news|feedback|books|rules with page,limit,q,sort (`name`, `-name`, `createdAt`, `-createdAt`),status,category,tag (comma separated),city
 - GET /:resource/:id -> User or Entity
 - POST /:resource, PATCH /:resource/:id, DELETE /:resource/:id (admin; member may create feedback, owner edit feedback; user may edit self)

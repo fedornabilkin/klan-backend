@@ -8,7 +8,10 @@ export interface DatabaseState {
   telegramUsers: Record<string, string>;
   userPublicIds: Record<string, number>;
   sessions: Record<string, { userId: string; expiresAt: string; source?: 'demo' | 'telegram' }>;
-  authRequests: Record<string, { browserHash: string; expiresAt: string; status: 'pending' | 'approved'; userId?: string }>;
+  authRequests: Record<string, {
+    browserHash: string; expiresAt: string; status: 'pending' | 'approved' | 'rejected' | 'denied'; userId?: string;
+    displayCode?: string; telegramId?: string; promptMessageId?: number;
+  }>;
 }
 export interface Repository {
   read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;

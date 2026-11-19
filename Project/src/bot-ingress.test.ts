@@ -109,7 +109,12 @@ for (const requireMembership of [false, true]) {
         const { data: { commands } } = await response.json();
         for (const command of commands) {
           methods.push(command.method);
-          const result = command.method === 'getChatMember' ? { ok: true, result: { status: 'member' } } : { ok: true };
+          const result = command.method === 'getChatMember' ? { ok: true, result: { status: 'member' } }
+            : command.method === 'sendMessage' ? { ok: true, result: { message_id: 55 } } : { ok: true };
+          if (command.method === 'sendMessage') {
+            assert.match(command.payload.text, /Код подтверждения: \d{6}/);
+            assert.deepEqual(command.payload.reply_markup.inline_keyboard[0].map((button: {text: string}) => button.text), ['Авторизоваться', 'Отклонить']);
+          }
           assert.equal((await service('command-result', { botId: identity.id, id: command.id, response: result })).status, 204);
         }
       }
@@ -127,10 +132,16 @@ for (const requireMembership of [false, true]) {
       const browserCookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
       const updateWithCode = { ...update, message: { ...update.message, text: `/start ${data.id}` } };
       assert.equal((await service('updates', updateWithCode)).status, 200);
+      assert.equal((await service('updates', {
+        update_id: update.update_id + 1,
+        callback_query: { id: 'synthetic-callback', from: update.message.from, data: `ok:${data.id}`, message: update.message },
+      })).status, 200);
       const status = await fetch(`${base}/api/auth/telegram/status/${data.id}`, { headers: { cookie: browserCookie } });
       assert.equal((await status.json()).data.status, 'approved');
       assert.ok(status.headers.getSetCookie().some(cookie => cookie.startsWith('klan_session=')));
-      assert.deepEqual(methods, requireMembership ? ['getChatMember', 'sendMessage', 'getChatMember'] : ['sendMessage']);
+      assert.deepEqual(methods, requireMembership
+        ? ['sendMessage', 'answerCallbackQuery', 'getChatMember', 'editMessageText', 'getChatMember']
+        : ['sendMessage', 'answerCallbackQuery', 'editMessageText']);
     } finally {
       commandLoop.abort();
       await workerDone;

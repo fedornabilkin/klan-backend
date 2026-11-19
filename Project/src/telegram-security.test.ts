@@ -40,10 +40,13 @@ test('A Telegram outage fails closed after the cached membership expires', async
 test('Bot denies outsiders, stale links and non-private commands without creating users or sessions', async () => {
   const now = Date.parse('2026-11-11T12:00:00Z');
   const state = emptyState(); const id = 'a'.repeat(48);
-  state.authRequests[id] = { browserHash: hashToken('browser'), expiresAt: new Date(now + 10000).toISOString(), status: 'pending' };
+  state.authRequests[id] = { browserHash: hashToken('browser'), expiresAt: new Date(now + 10000).toISOString(), status: 'pending', displayCode: '123456' };
   const repo = new MemoryRepository(state);
   const sent: object[] = [];
-  const dependencies: AuthDependencies = { now: () => now, telegramRequest: async <T>(method: string, payload: object) => { if (method === 'sendMessage') sent.push(payload); return (method === 'getChatMember' ? { status: 'left' } : {}) as T; } };
+  const dependencies: AuthDependencies = { now: () => now, telegramRequest: async <T>(method: string, payload: object) => {
+    if (method === 'sendMessage' || method === 'editMessageText') sent.push(payload);
+    return (method === 'getChatMember' ? { status: 'left' } : { message_id: 42 }) as T;
+  } };
   const auth = createAuth(repo, base, undefined, dependencies);
   const message = { from: { id: 12345, first_name: 'Посторонний' }, chat: { id: 12345, type: 'private' }, text: `/start ${id}` };
   await auth.handleTelegramUpdate({ update_id: 1, message });
@@ -52,9 +55,14 @@ test('Bot denies outsiders, stale links and non-private commands without creatin
   assert.equal(await repo.read(value => Object.keys(value.sessions).length), 0);
   await auth.handleTelegramUpdate({ update_id: 2, message: { ...message, chat: { id: -1001, type: 'supergroup' } } });
   assert.equal(sent.length, 1);
-  await repo.write(value => { value.authRequests[id]!.expiresAt = new Date(now - 1).toISOString(); });
-  await auth.handleTelegramUpdate({ update_id: 3, message });
+  await auth.handleTelegramUpdate({ update_id: 3, callback_query: {
+    id: 'synthetic-callback', from: message.from, data: `ok:${id}`, message: { message_id: 42, chat: message.chat },
+  } });
   assert.equal(sent.length, 2);
+  assert.equal(await repo.read(value => value.authRequests[id]?.status), 'denied');
+  await repo.write(value => { value.authRequests[id]!.expiresAt = new Date(now - 1).toISOString(); });
+  await auth.handleTelegramUpdate({ update_id: 4, message });
+  assert.equal(sent.length, 3);
   assert.equal(await repo.read(value => value.users.length), 0);
 });
 

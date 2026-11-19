@@ -111,16 +111,18 @@ test('Telegram authentication uses immutable ID bindings despite profile usernam
   state.telegramUsers['12345'] = user.id;
   updateProfile(state, user.id, { username: 'contact_handle' }, user);
   const existingRequest = 'a'.repeat(48); const unrelatedRequest = 'b'.repeat(48);
-  for (const id of [existingRequest, unrelatedRequest]) state.authRequests[id] = { browserHash: 'test', expiresAt: new Date(Date.now() + 60000).toISOString(), status: 'pending' };
+  for (const [id, telegramId] of [[existingRequest, '12345'], [unrelatedRequest, '98765']] as const) {
+    state.authRequests[id] = { browserHash: 'test', expiresAt: new Date(Date.now() + 60000).toISOString(), status: 'pending', telegramId, promptMessageId: 42 };
+  }
   const repo = new MemoryRepository(state);
   const auth = createAuth(repo, { ...config, botInternalSecret: 'test-service-secret-'.repeat(3), telegramGroups: ['-100123'] }, undefined, { telegramRequest: async <T>() => ({ status: 'member' }) as T });
-  await auth.handleTelegramUpdate({ update_id: 1, message: { from: { id: 98765, first_name: 'Another', username: 'contact_handle' }, chat: { id: 98765, type: 'private' }, text: `/start ${unrelatedRequest}` } });
+  await auth.handleTelegramUpdate({ update_id: 1, callback_query: { id: 'one', from: { id: 98765, first_name: 'Another', username: 'contact_handle' }, message: { message_id: 42, chat: { id: 98765, type: 'private' } }, data: `ok:${unrelatedRequest}` } });
   await repo.read(current => {
     assert.equal(current.telegramUsers['12345'], user.id);
     assert.notEqual(current.telegramUsers['98765'], user.id, 'matching a contact username cannot claim another account');
     assert.equal(current.authRequests[unrelatedRequest]!.userId, current.telegramUsers['98765']);
   });
-  await auth.handleTelegramUpdate({ update_id: 2, message: { from: { id: 12345, first_name: 'Renamed', username: 'official_handle' }, chat: { id: 12345, type: 'private' }, text: `/start ${existingRequest}` } });
+  await auth.handleTelegramUpdate({ update_id: 2, callback_query: { id: 'two', from: { id: 12345, first_name: 'Renamed', username: 'official_handle' }, message: { message_id: 42, chat: { id: 12345, type: 'private' } }, data: `ok:${existingRequest}` } });
   await repo.read(current => {
     assert.equal(current.authRequests[existingRequest]!.userId, user.id);
     assert.equal(current.users.find(candidate => candidate.id === user.id)!.username, 'official_handle');

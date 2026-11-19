@@ -6,13 +6,19 @@ import { HttpError } from './errors.js';
 import type { BotChannel } from './bot-channel.js';
 
 const id = z.number().int().safe();
+const telegramUser = z.object({ id: id.positive(), is_bot: z.boolean().optional(), first_name: z.string().max(256), last_name: z.string().max(256).optional(), username: z.string().max(64).optional() });
+const telegramChat = z.object({ id, type: z.enum(['private', 'group', 'supergroup', 'channel']) });
 // Telegram adds fields over time; validate consumed fields and discard the rest.
 const updateSchema = z.object({
   update_id: id.nonnegative(),
   message: z.object({
-    from: z.object({ id: id.positive(), is_bot: z.boolean().optional(), first_name: z.string().max(256), last_name: z.string().max(256).optional(), username: z.string().max(64).optional() }).optional(),
-    chat: z.object({ id, type: z.enum(['private', 'group', 'supergroup', 'channel']) }),
+    from: telegramUser.optional(),
+    chat: telegramChat,
     text: z.string().max(4096).optional(),
+  }).optional(),
+  callback_query: z.object({
+    id: z.string().min(1).max(128), from: telegramUser, data: z.string().max(64).optional(),
+    message: z.object({ message_id: id.positive(), chat: telegramChat }).optional(),
   }).optional(),
 });
 
@@ -24,7 +30,10 @@ const commandResultSchema = z.object({
     z.object({ ok: z.literal(false) }),
     z.object({
       ok: z.literal(true),
-      result: z.object({ status: z.string().max(32), is_member: z.boolean().optional() }).optional(),
+      result: z.union([
+        z.object({ status: z.string().max(32), is_member: z.boolean().optional() }),
+        z.object({ message_id: id.positive() }),
+      ]).optional(),
     }),
   ]),
 });
