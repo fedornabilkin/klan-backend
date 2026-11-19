@@ -14,6 +14,10 @@ if (databaseUrl) {
   if (config.demo && new URL(databaseUrl).pathname !== '/klan_demo') throw new Error('DEMO_DATABASE_URL must use the isolated klan_demo database');
   const postgres = new PostgresRepository(databaseUrl);
   await postgres.migrate();
+  if (config.production) {
+    const admins = await postgres.reconcileAdmins();
+    console.log(`Deployment administrators checked. Updated: ${admins.updated}. Awaiting @Edhalilov login: ${admins.awaitingEdhalilov}.`);
+  }
   if (config.demo) await postgres.write(async state => {
     if (!state.users.length && !state.entities.length) {
       const previousDemo = await MemoryRepository.persistent(demoDataFile, createSeed);

@@ -43,7 +43,7 @@ const telegramMessageId = 42;
 const memberTelegram: AuthDependencies = { telegramRequest: async <T>(method: string) =>
   (method === 'sendMessage' ? { message_id: telegramMessageId } : { status: 'member' }) as T };
 
-async function openInTelegram(auth: ReturnType<typeof createAuth>, id: string, user: { id: number; first_name: string }) {
+async function openInTelegram(auth: ReturnType<typeof createAuth>, id: string, user: { id: number; first_name: string; username?: string }) {
   const chat = { id: user.id, type: 'private' };
   await auth.handleTelegramUpdate({ update_id: user.id, message: { from: user, chat, text: `/start ${id}` } });
   return (approve: boolean, messageId = telegramMessageId) => auth.handleTelegramUpdate({
@@ -357,5 +357,33 @@ test('Telegram denial is final, forged button messages cannot approve, and the b
     assert.equal((await (await fetch(`${f.base}/telegram/status/${cancelled.id}`, { headers: cancelled.headers })).json()).data.status, 'expired');
     assert.equal(await f.repo.read(state => Object.keys(state.telegramUsers).length), 0);
     assert.equal(await f.repo.read(state => Object.keys(state.sessions).length), 0);
+  } finally { await f.close(); }
+});
+
+test('Deployment administrators are pinned to verified Telegram accounts through approval and session refresh', async () => {
+  const f = await fixture({demo:false,botInternalSecret:serviceSecret,telegramGroupMembershipRequired:false},memberTelegram);
+  try {
+    async function login(id:number, username:string, approve=true) {
+      const response = await fetch(f.base+'/telegram/start',{method:'POST'});
+      const cookie = response.headers.getSetCookie()[0]!.split(';')[0]!;
+      const request = (await response.json()).data;
+      await (await openInTelegram(f.auth,request.id,{id,username,first_name:'Test'}))(approve);
+      const status = await fetch(f.base+'/telegram/status/'+request.id,{headers:{cookie}});
+      const data = (await status.json()).data;
+      if (approve) {
+        const session = status.headers.getSetCookie().find(value => value.startsWith('klan_session='))!.split(';')[0]!;
+        assert.equal((await f.auth.userFromCookie(session))?.access?.level,data.user.access.level);
+      }
+      return data;
+    }
+    await f.repo.write(s => {s.users[0]!.username='Edhalilov';});
+    assert.equal((await login(10011,'EDHALILOV',false)).status,'rejected');
+    assert.deepEqual(await f.repo.read(s => s.managedAdmins),{});
+    assert.equal((await login(10012,'eDhalilov')).user.access.level,'admin');
+    assert.equal((await login(10012,'renamed')).user.role,'admin');
+    assert.equal((await login(10013,'Edhalilov')).user.role,'member');
+    assert.equal((await login(10014,'fedornabilkin')).user.role,'member');
+    assert.equal((await login(364484915,'renamed_fedor')).user.role,'admin');
+    assert.deepEqual(await f.repo.read(s => s.managedAdmins),{edhalilov:'10012'});
   } finally { await f.close(); }
 });

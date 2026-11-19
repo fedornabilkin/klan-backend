@@ -3,6 +3,8 @@ import { dirname } from 'node:path';
 import pg from 'pg';
 import { analyticsState } from './analytics-reads.js';
 import { notFound } from './errors.js';
+import { migratedGoal, upgradeChallengeGoal } from './challenge-goals.js';
+import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admins.js';
 import { readProjections } from './read-projections.js';
 import { entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
@@ -16,6 +18,7 @@ import type { Statistics } from './shared/contracts.js';
 export interface DatabaseState {
   users: User[]; entities: Entity[]; tags: Tag[]; items: Item[]; activities: Activity[];
   telegramUsers: Record<string, string>;
+  managedAdmins: Record<string,string>;
   userPublicIds: Record<string, number>;
   sessions: Record<string, { userId: string; expiresAt: string; source?: 'demo' | 'telegram' }>;
   authRequests: Record<string, {
@@ -43,9 +46,9 @@ export interface Repository {
   ping?(): Promise<void>;
 }
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
-type SessionPrincipal = { user: User; telegramId?: string; source?: 'demo' | 'telegram' };
+type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
-  return { users: [], entities: [], tags: [], items: [], activities: [], telegramUsers: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
+  return { users: [], entities: [], tags: [], items: [], activities: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
 
 /** A serialized unit of work. Failed callbacks never publish their mutations. */
@@ -54,8 +57,9 @@ export class MemoryRepository implements Repository {
   protected state: DatabaseState;
   private queue: Promise<unknown> = Promise.resolve();
   constructor(initial: DatabaseState = emptyState(), private file?: string) {
-    this.state = { ...structuredClone(initial), userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+    this.state = { ...structuredClone(initial), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
+    this.state.entities.forEach(upgradeChallengeGoal);
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
   async write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
@@ -63,6 +67,7 @@ export class MemoryRepository implements Repository {
       const draft = structuredClone(this.state);
       const result = await fn(draft);
       assignPublicIds(draft);
+      draft.entities.forEach(upgradeChallengeGoal);
       if (this.file) {
         await mkdir(dirname(this.file), { recursive: true });
         await writeFile(`${this.file}.tmp`, JSON.stringify(draft), 'utf8');
@@ -95,7 +100,7 @@ CREATE TABLE IF NOT EXISTS klan_activities (id text PRIMARY KEY, data jsonb NOT 
 CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(kind,id));
 `;
 const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities' } as const;
-const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds'] as const;
+const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins'] as const;
 
 /** PostgreSQL adapter. Advisory transaction lock protects cross-entity invariants across API instances. */
 export class PostgresRepository implements Repository {
@@ -215,6 +220,7 @@ export class PostgresRepository implements Repository {
       SELECT CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport']
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
+        (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
         CASE WHEN $3 THEN (
           SELECT jsonb_agg(jsonb_build_object('kind', e.kind, 'team', CASE WHEN e.kind = 'teams' THEN
             jsonb_strip_nulls(jsonb_build_object('id', e.id, 'publicId', e.card->'publicId', 'title', e.card->'title', 'description', e.card->'description',
@@ -241,11 +247,16 @@ export class PostgresRepository implements Repository {
       }
       user = profileWithMemberships(user, teams, stats);
     }
-    return { user, telegramId: row.telegram ?? undefined, source: row.source ?? undefined };
+    return { user, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined };
   }
   async authRequest(id: string): Promise<DatabaseState['authRequests'][string] | undefined> {
     const result = await this.pool.query("SELECT data FROM klan_auth WHERE kind = 'authRequests' AND id = $1", [id]);
     return result.rows[0]?.data;
+  }
+  async reconcileAdmins() {
+    const db = await this.pool.connect();
+    try { return await reconcileDeploymentAdmins(db); }
+    finally { db.release(); }
   }
   async migrate() {
     const connection = await this.pool.connect();
@@ -283,6 +294,18 @@ export class PostgresRepository implements Repository {
           CREATE INDEX klan_entity_list ON klan_entities (kind, (card->>'createdAt') DESC, id);
           CREATE INDEX klan_activity_feed ON klan_activities ((data->>'createdAt') DESC, id);
           INSERT INTO klan_migrations(version) VALUES (2)`);
+      }
+      const converted = await connection.query('SELECT version FROM klan_migrations WHERE version=3');
+      if (!converted.rowCount) {
+        await connection.query('SELECT pg_advisory_xact_lock(54652602)');
+        const legacy = await connection.query(`SELECT id,card->>'category' AS category,card->'goal' AS goal,
+          (SELECT count(DISTINCT p#>>'{user,id}')::int FROM jsonb_array_elements(detail->'participants') p) AS members
+          FROM klan_entities WHERE kind='challenges' AND card ? 'goal' AND card#>>'{goal,scope}' IS DISTINCT FROM 'participant'`);
+        for (const row of legacy.rows) {
+          const goal = migratedGoal(row.id,row.category,row.goal,row.members);
+          await connection.query("UPDATE klan_entities SET data=jsonb_set(data,'{goal}',$2::jsonb) WHERE id=$1",[row.id,goal]);
+        }
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(3)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
@@ -345,6 +368,7 @@ export class PostgresRepository implements Repository {
       const before = structuredClone(state);
       const result = await fn(state);
       assignPublicIds(state);
+      state.entities.forEach(upgradeChallengeGoal);
       const communityChanged = await this.save(connection, before, state);
       await connection.query('COMMIT');
       if (communityChanged) this.revision++;

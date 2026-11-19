@@ -61,7 +61,7 @@ export const entitySchema = z.object({
   category: categorySchema.default(''), content: z.string().max(30000).optional(),
   tags: tagsSchema.default([]), location: locationSchema.optional(),
   schedule: z.object({ start: z.iso.datetime({ offset: true }), end: z.iso.datetime({ offset: true }) }).optional(),
-  motto: z.string().trim().max(200).optional(), goal: z.object({ target: z.number().positive().max(1e9), unit: shortText }).optional(),
+  motto: z.string().trim().max(200).optional(), goal: z.object({ target: z.number().positive().max(1e9), unit: shortText, scope: z.literal('participant').optional() }).optional(),
   capacity: z.number().int().positive().max(100000).optional(),
 }).strict();
 // PATCH must not apply creation defaults to omitted fields.
@@ -213,7 +213,9 @@ function validateEntity(state: DatabaseState, entity: Entity, original?: Entity)
   if (entity.type === 'feedback' && !['open', 'in_progress', 'resolved', 'closed'].includes(entity.status)) throw new HttpError(400, 'INVALID_FEEDBACK_STATUS', 'Некорректный статус предложения');
   if (entity.schedule && Date.parse(entity.schedule.end) < Date.parse(entity.schedule.start)) throw new HttpError(400, 'INVALID_SCHEDULE', 'Окончание должно быть после начала');
   if (['events', 'challenges'].includes(entity.type) && !entity.schedule) throw new HttpError(400, 'SCHEDULE_REQUIRED', 'Укажите даты проведения');
-  if (entity.type === 'challenges' && !entity.goal) throw new HttpError(400, 'GOAL_REQUIRED', 'Укажите цель челленджа');
+  if (entity.type === 'challenges' && !entity.goal) throw new HttpError(400, 'GOAL_REQUIRED', 'Укажите цель на одного участника');
+  if (entity.type === 'challenges' && entity.category === 'attendance' && !Number.isInteger(entity.goal?.target))
+    throw new HttpError(400, 'INVALID_ATTENDANCE_GOAL', 'Укажите целое число посещений на одного участника');
   if (entity.capacity && entity.capacity < entity.participants.length) throw new HttpError(409, 'CAPACITY_TOO_SMALL', 'Лимит меньше текущего числа участников');
   if (entity.type === 'teams' && entity.status === 'active' && original?.status !== 'active') {
     const conflict = state.entities.some(team => team.type === 'teams' && team.id !== entity.id && team.status === 'active' && team.participants.some(p => entity.participants.some(other => other.user.id === p.user.id)));
@@ -229,7 +231,10 @@ export function createEntity(state: DatabaseState, resource: Entity['type'], inp
   if (resource === 'feedback' && (!hasCapability(actor, 'content.manage') || values.status === 'active')) values.status = 'open';
   const entity: Entity = { ...values, id: randomUUID(), type: resource, createdAt: new Date().toISOString(), participants: [], author: actor, tags: canonicalTags(state, values.tags) };
   if (resource === 'books') entity.readers = [];
-  if (resource === 'challenges') entity.results = [];
+  if (resource === 'challenges') {
+    entity.results = [];
+    if (entity.goal) entity.goal.scope = 'participant';
+  }
   validateEntity(state, entity);
   state.entities.push(entity);
   assignPublicIds(state);
@@ -241,6 +246,7 @@ export function editEntity(state: DatabaseState, resource: Entity['type'], id: s
   const values = entityPatchSchema.parse(input);
   if (resource === 'feedback' && !hasCapability(actor, 'content.manage') && values.status !== undefined) throw forbidden();
   if (values.tags) values.tags = canonicalTags(state, values.tags);
+  if (resource === 'challenges' && values.goal) values.goal.scope = 'participant';
   const entity = { ...original, ...values };
   validateEntity(state, entity, original);
   Object.assign(original, entity);

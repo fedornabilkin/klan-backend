@@ -46,6 +46,9 @@ async function memberships(db: PoolClient, users: User[], drafts: boolean, cards
 export function compactDetail(entity: Entity, users: Map<string, User>, teams: Map<string, Pick<Entity, 'id'|'title'|'publicId'>>) {
   const people = new Map<string, {index:number; profile:ReturnType<typeof displayUser>}>();
   const teamRefs = new Map<string, {index:number; team:Pick<Entity,'id'|'title'|'publicId'>}>();
+  if (entity.type === 'challenges') {
+    for (const team of teams.values()) teamRefs.set(team.id, {index:teamRefs.size,team});
+  }
   function displayUser(u: User) {
     const { id, publicId, name, initials, color, role, username, callsign, location } = u;
     return { id, publicId, name, initials, color, role, username, callsign, location };
@@ -102,8 +105,9 @@ async function hydrateDetails(db: PoolClient, documents: StoredDetail[], drafts:
     for (const reader of entity.readers ?? []) ids.add(reader.id);
     if (entity.author) ids.add(entity.author.id);
   }
-  const teams = teamIds.size ? (await db.query(`SELECT id,card->>'title' AS title,(card->>'publicId')::float8 AS "publicId"
-    FROM klan_entities WHERE kind='teams' AND id=ANY($1) AND ${visible(drafts)}`, [[...teamIds]])).rows : [];
+  const allTeams = compact && documents.some(e => e.type === 'challenges');
+  const teams = allTeams || teamIds.size ? (await db.query(`SELECT id,card->>'title' AS title,(card->>'publicId')::float8 AS "publicId"
+    FROM klan_entities WHERE kind='teams' AND ${visible(drafts)} ${allTeams ? '' : 'AND id=ANY($1)'} ORDER BY id`, allTeams ? [] : [[...teamIds]])).rows : [];
   const fields = compact ? `SELECT u.id, p.* FROM klan_users u, jsonb_to_record(u.data)
     p("publicId" float8,name text,initials text,color text,role text,username text,callsign text,location jsonb) WHERE u.id=ANY($1)` :
     `SELECT ${publicProfile} AS profile FROM klan_users WHERE id=ANY($1)`;

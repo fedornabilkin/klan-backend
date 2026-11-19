@@ -9,7 +9,7 @@ CREATE TEMP VIEW reviewed_rows (relation, body) AS
   UNION ALL SELECT 'klan_activities', to_jsonb(t) FROM public.klan_activities t
   UNION ALL SELECT 'klan_migrations', to_jsonb(t) FROM public.klan_migrations t
   UNION ALL SELECT 'klan_auth', to_jsonb(t) FROM public.klan_auth t
-    WHERE kind NOT IN ('sessions', 'authRequests');
+    WHERE kind NOT IN ('sessions', 'authRequests', 'managedAdmins');
 
 \if :export_mode
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
@@ -23,7 +23,7 @@ DO $$
 BEGIN
   IF (SELECT array_agg(tablename::text ORDER BY tablename) FROM pg_tables WHERE schemaname = 'public')
      IS DISTINCT FROM ARRAY['klan_activities','klan_auth','klan_entities','klan_items','klan_migrations','klan_tags','klan_users']
-     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2]), false) THEN
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3]), false) THEN
     RAISE EXCEPTION 'Unexpected Klan schema or migration version';
   END IF;
 END $$;
@@ -43,6 +43,10 @@ BEGIN
      IS DISTINCT FROM (SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) THEN
     RAISE EXCEPTION 'Update both databases to the same migration version before import';
   END IF;
+  IF EXISTS (SELECT FROM reviewed_input WHERE relation='klan_auth' AND body->>'kind'='managedAdmins') THEN
+    RAISE EXCEPTION 'Deployment administrator bindings belong to the target database';
+  END IF;
+  CREATE TEMP TABLE saved_admin_bindings ON COMMIT DROP AS SELECT * FROM public.klan_auth WHERE kind='managedAdmins';
   TRUNCATE public.klan_users, public.klan_entities, public.klan_tags, public.klan_items,
            public.klan_activities, public.klan_migrations, public.klan_auth;
   FOREACH target IN ARRAY ARRAY['klan_users','klan_entities','klan_tags','klan_items','klan_activities','klan_migrations','klan_auth']
@@ -54,6 +58,7 @@ BEGIN
     EXECUTE format('INSERT INTO public.%1$I SELECT (jsonb_populate_record(NULL::public.%1$I, body)).* FROM pg_temp.reviewed_input WHERE relation = $1', target)
       USING target;
   END LOOP;
+  INSERT INTO public.klan_auth SELECT * FROM saved_admin_bindings;
   IF EXISTS ((TABLE reviewed_input EXCEPT ALL TABLE reviewed_rows)
              UNION ALL (TABLE reviewed_rows EXCEPT ALL TABLE reviewed_input)) THEN
     RAISE EXCEPTION 'Source and restored rows differ';
@@ -70,7 +75,7 @@ BEGIN
      OR (SELECT count(*) FROM public.klan_entities WHERE kind='challenges') <> 1
      OR NOT EXISTS (SELECT FROM public.klan_entities WHERE kind='challenges' AND id='history-challenge-f24c7cb336799a547084efb9')
      OR (SELECT count(*) FROM public.klan_auth WHERE kind='telegramUsers') <> 451
-     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2]), false) THEN
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3]), false) THEN
     RAISE EXCEPTION 'Data does not match the reviewed October dataset';
   END IF;
 END $$;

@@ -1,3 +1,4 @@
+import { upgradeChallengeGoal } from '../../src/challenge-goals.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Entity, User } from '../../src/shared/contracts.js';
@@ -221,6 +222,7 @@ export function planHistoricalChallengeImport(original: DatabaseState, input: un
       report.pendingTotal += entry.value;
     }
   }
+  upgradeChallengeGoal(challenge);
   report.participants = challenge.participants.length;
   report.resultsCreated = challenge.results!.length;
   report.pendingResultsCreated = challenge.pendingResults!.length;
