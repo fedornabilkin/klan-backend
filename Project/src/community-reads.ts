@@ -6,6 +6,27 @@ import { profileEntryText } from './shared/profile-entries.js';
 export type MapUser = SearchUser & Pick<User, 'publicId' | 'initials' | 'color'>;
 type StatisticsUser = Pick<User, 'tags' | 'achievements'> & { city: string };
 
+export function rankingCandidates(entities: Entity[], now: Date) {
+  const time = now.getTime();
+  const ongoing = (e: Entity) => e.status === 'active' && Date.parse(e.schedule!.end) >= time;
+  const orderDate = (e: Entity) => Date.parse(ongoing(e) ? e.schedule!.start : e.schedule!.end);
+  return entities.filter(e => e.type === 'challenges' && e.status !== 'draft' && e.schedule
+    && Date.parse(e.schedule.start) <= time
+    && (ongoing(e) || Date.parse(e.schedule.end) <= time || ['completed','archived','closed'].includes(e.status)))
+    .sort((a, b) => Number(ongoing(b)) - Number(ongoing(a))
+      || orderDate(b) - orderDate(a) || a.id.localeCompare(b.id));
+}
+
+const teamNames = new Intl.Collator('ru', { numeric: true });
+export function dashboardTeamRanking(challenge: Entity, entities: Entity[], scores: Map<string, number>) {
+  const leaders = entities.filter(e => e.type === 'teams' && e.status !== 'draft')
+    .map(({ id, publicId, title }) => ({ id, publicId, title, score: scores.get(id) ?? 0 }))
+    .sort((a, b) => b.score - a.score || teamNames.compare(a.title, b.title) || a.id.localeCompare(b.id))
+    .slice(0, 4);
+  const { id, publicId, title } = challenge;
+  return { challenge: { id, publicId, title }, unit: challenge.goal?.unit || 'ед.', leaders };
+}
+
 export function dashboardCards(entities: Entity[], now: Date) {
   const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);

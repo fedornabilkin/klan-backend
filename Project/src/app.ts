@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { Activity, Entity, Resource, User } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, Repository } from './repository.js';
-import { dashboardCards, statistics } from './community-reads.js';
+import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
 import { compactDetail, entityCard, userCard } from './resource-reads.js';
 import { publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
@@ -164,11 +164,17 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       ? repo.dashboardOverview(now,scope === 'all') : readPage('dashboard', raw => {
       const state = visibleState(raw, req.user!);
       const cards = dashboardCards(state.entities, now);
+      const challenge = compact && rankingCandidates(state.entities, now).find(e => e.results?.some(r => r.team?.id));
+      const scores = new Map<string, number>();
+      if (challenge) for (const { team, value } of challenge.results ?? []) {
+        if (team) scores.set(team.id, (scores.get(team.id) ?? 0) + value);
+      }
       const mapUsers = state.users.filter(({ location }) => location.city.trim()
         && typeof location.lat === 'number' && Number.isFinite(location.lat) && location.lat >= -90 && location.lat <= 90
         && typeof location.lng === 'number' && Number.isFinite(location.lng) && location.lng >= -180 && location.lng <= 180);
       const card = (e: Entity) => compact ? entityCard(e) : hydrateEntity(state,e);
       return { activityTotal:state.activities.length, stats: { users: state.users.length, cities: new Set(mapUsers.map(user => `${user.location.country.trim()}:${user.location.city.trim()}`.toLocaleLowerCase('ru'))).size, ...cards.counts },
+        ...(compact && { teamRanking: challenge ? dashboardTeamRanking(challenge, state.entities, scores) : null }),
         events: cards.events.map(card), challenges: cards.challenges.map(card), teams: cards.teams.map(card), activity: state.activities.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, compact ? 5 : 20).map(a => publicActivity(state,a)) };
     }, now));
   });

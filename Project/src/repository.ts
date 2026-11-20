@@ -12,7 +12,7 @@ import type { Resource } from './shared/contracts.js';
 import { assignPublicIds } from './user-ids.js';
 import type { Activity, Entity, Item, Tag, User } from './shared/contracts.js';
 import { profileWithMemberships } from './domain.js';
-import { dashboardCards, readStatistics, type MapUser } from './community-reads.js';
+import { dashboardCards, dashboardTeamRanking, rankingCandidates, readStatistics, type MapUser } from './community-reads.js';
 import type { Statistics } from './shared/contracts.js';
 
 export interface DatabaseState {
@@ -182,7 +182,22 @@ export class PostgresRepository implements Repository {
         FROM klan_users,jsonb_to_record(data->'location') p(city text,country text,lat float8,lng float8)`)).rows[0];
       const entities = (await db.query(entityCardSelect + ' ORDER BY e.id')).rows.map(r => r.card) as Entity[];
       const cards = dashboardCards(entities,at), feed = await readActivity(db,{page:1,limit:5},drafts);
-      return {stats:{...row,...cards.counts},events:cards.events,teams:cards.teams,challenges:cards.challenges,activity:feed.data,activityTotal:feed.meta.total};
+      const candidates = rankingCandidates(entities, at);
+      let teamRanking = null;
+      if (candidates.length) {
+        const totals = await db.query<{ challenge: string; team: string; score: number }>(`
+          WITH chosen AS (
+            SELECT e.id, e.detail FROM unnest($1::text[]) WITH ORDINALITY candidate(id, priority)
+            JOIN klan_entities e ON e.id=candidate.id
+            WHERE e.detail @? '$.results[*].team.id' ORDER BY priority LIMIT 1
+          )
+          SELECT chosen.id AS challenge, r.team->>'id' AS team, sum(r.value) AS score
+          FROM chosen, jsonb_to_recordset(chosen.detail->'results') r(team jsonb, value float8)
+          WHERE r.team->>'id' IS NOT NULL GROUP BY 1,2`, [candidates.map(c => c.id)]);
+        const challenge = candidates.find(c => c.id === totals.rows[0]?.challenge);
+        if (challenge) teamRanking = dashboardTeamRanking(challenge, entities, new Map(totals.rows.map(r => [r.team, r.score])));
+      }
+      return {stats:{...row,...cards.counts},events:cards.events,teams:cards.teams,challenges:cards.challenges,teamRanking,activity:feed.data,activityTotal:feed.meta.total};
     });
   }
   async readPage<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T> {
