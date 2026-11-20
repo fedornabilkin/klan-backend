@@ -24,7 +24,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - PUT /books/:id/read {read:boolean}
 - GET /dashboard -> Dashboard; GET /activity (paginated); GET /stats -> Statistics
 - GET /users/me/export -> own profile JSON; POST /users/me/import {profile:{name,bio,location,facts,interests,achievements,tags}} -> User
-- WebSocket /ws with session cookie. Messages `{type:'invalidate',resource:string}` or `{type:'activity',data:Activity}`. Client refetches only affected data.
+- WebSocket /ws with session cookie. Messages `{type:'invalidate',resource:string}` or `{type:'activity',data:Activity}`. Client refetches only affected data. After authentication, the server sends one presence snapshot `{type:'presence',online:string[]}` followed by batched `{type:'presence',joined:string[],left:string[]}` updates. IDs are internal user IDs. A member stays online while any authenticated tab is connected. Unresponsive connections expire after a missed heartbeat.
 
 The bot uses JSON POST requests under `/internal/telegram` with `Authorization: Bearer <BOT_INTERNAL_SECRET>`. `/updates` accepts a Telegram update, `/commands` registers the bot identity and waits up to 20 seconds for work, and `/command-result` acknowledges a command. The public gateway must block the entire prefix. See [architecture.md](architecture.md).
 

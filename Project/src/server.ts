@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { readConfig } from './config.js';
 import { createApp, type Broadcast } from './app.js';
 import { MemoryRepository, PostgresRepository, type Repository } from './repository.js';
+import { Presence } from './presence.js';
 import { createSeed } from './seed.js';
 
 const config = readConfig();
@@ -28,6 +29,7 @@ if (databaseUrl) {
   repo = postgres;
 } else repo = await MemoryRepository.persistent(demoDataFile, createSeed);
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+const presence = new Presence();
 const cookies = new WeakMap<WebSocket, string>();
 const pending = new Map<string, string>();
 let flushing = false;
@@ -72,14 +74,20 @@ const { app, auth } = createApp(repo, config, broadcast);
 const server = createServer(app);
 server.on('upgrade', async (request, socket, head) => {
   try {
-    if (request.url !== '/ws' || request.headers.origin !== config.origin || !await auth.userFromCookie(request.headers.cookie, false)) {
+    const user = request.url === '/ws' && request.headers.origin === config.origin
+      ? await auth.userFromCookie(request.headers.cookie, false) : undefined;
+    if (!user) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); socket.destroy(); return;
     }
-    sockets.handleUpgrade(request, socket, head, client => { cookies.set(client, request.headers.cookie ?? ''); sockets.emit('connection', client, request); });
+    sockets.handleUpgrade(request, socket, head, client => {
+      cookies.set(client, request.headers.cookie ?? '');
+      sockets.emit('connection', client, request);
+      presence.connect(client, user.id);
+    });
   } catch { socket.destroy(); }
 });
 sockets.on('connection', socket => { socket.on('error', () => socket.close()); socket.send(JSON.stringify({ type: 'connected' })); });
-const validation = setInterval(() => { if (!timer) void flush(); }, 30_000);
+const validation = setInterval(() => { presence.heartbeat(); if (!timer) void flush(); }, 30_000);
 validation.unref();
 server.listen(config.port, config.production ? '0.0.0.0' : '127.0.0.1', () => console.log(`KLAN API: http://localhost:${config.port}${config.demo ? ' (DEMO — isolated local data)' : ''}`));
 let closing = false;
