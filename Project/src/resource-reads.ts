@@ -11,9 +11,13 @@ export function entityCard(entity: Entity) {
 }
 
 export function userCard(user: User, showAccess = false) {
-  const { id, publicId, role, name, initials, color, bio, location, tags } = user;
-  return { id, publicId, role, name, initials, color, bio, location, tags, ...(showAccess && user.access && { access:user.access }), stats: { events: user.stats.events } };
+  const { id, publicId, role, name, firstName, lastName, callsign, initials, color, bio, location, tags } = user;
+  return { id, publicId, role, name, firstName, lastName, callsign, hasActiveTeam: user.hasActiveTeam ?? !!user.activeTeams?.length, initials, color, bio, location, tags, ...(showAccess && user.access && { access:user.access }), stats: { events: user.stats.events } };
 }
+
+// Uncorrelated membership set, shared by all profiles in a result page.
+export const activeTeamUserIds = `SELECT member#>>'{user,id}' FROM klan_entities team,
+  jsonb_array_elements(team.detail->'participants') member WHERE team.kind='teams' AND team.card->>'status'='active'`;
 
 export const entityCardSelect = 'SELECT e.id,e.card FROM klan_entities e';
 
@@ -50,8 +54,8 @@ export function compactDetail(entity: Entity, users: Map<string, User>, teams: M
     for (const team of teams.values()) teamRefs.set(team.id, {index:teamRefs.size,team});
   }
   function displayUser(u: User) {
-    const { id, publicId, name, initials, color, role, username, callsign, location } = u;
-    return { id, publicId, name, initials, color, role, username, callsign, location };
+    const { id, publicId, name, initials, color, role, username, firstName, lastName, callsign, hasActiveTeam, location } = u;
+    return { id, publicId, name, initials, color, role, username, firstName, lastName, callsign, hasActiveTeam, location };
   }
   function person(u: User) {
     let ref = people.get(u.id);
@@ -108,8 +112,8 @@ async function hydrateDetails(db: PoolClient, documents: StoredDetail[], drafts:
   const allTeams = compact && documents.some(e => e.type === 'challenges');
   const teams = allTeams || teamIds.size ? (await db.query(`SELECT id,card->>'title' AS title,(card->>'publicId')::float8 AS "publicId"
     FROM klan_entities WHERE kind='teams' AND ${visible(drafts)} ${allTeams ? '' : 'AND id=ANY($1)'} ORDER BY id`, allTeams ? [] : [[...teamIds]])).rows : [];
-  const fields = compact ? `SELECT u.id, p.* FROM klan_users u, jsonb_to_record(u.data)
-    p("publicId" float8,name text,initials text,color text,role text,username text,callsign text,location jsonb) WHERE u.id=ANY($1)` :
+  const fields = compact ? `SELECT u.id, u.id IN (${activeTeamUserIds}) AS "hasActiveTeam", p.* FROM klan_users u, jsonb_to_record(u.data)
+    p("publicId" float8,name text,initials text,color text,role text,username text,"firstName" text,"lastName" text,callsign text,location jsonb) WHERE u.id=ANY($1)` :
     `SELECT ${publicProfile} AS profile FROM klan_users WHERE id=ANY($1)`;
   const rows = ids.size ? (await db.query(fields, [[...ids]])).rows : [];
   const users: User[] = rows.map(r => compact ? r : r.profile);
@@ -151,7 +155,7 @@ export async function readList(db: PoolClient, resource: Resource, q: Query, dra
   const pageMeta = meta({page:q.page,limit:q.limit},total);
   if (!ids.length) return { data: [], meta: pageMeta };
   if (users) {
-    const fields = cards ? `SELECT id,p.* FROM klan_users, jsonb_to_record(data) p("publicId" float8,role text,name text,initials text,color text,bio text,location jsonb,tags jsonb${drafts ? ',access jsonb' : ''}) WHERE id=ANY($1)` :
+    const fields = cards ? `SELECT id,id IN (${activeTeamUserIds}) AS "hasActiveTeam",p.* FROM klan_users, jsonb_to_record(data) p("publicId" float8,role text,name text,"firstName" text,"lastName" text,callsign text,initials text,color text,bio text,location jsonb,tags jsonb${drafts ? ',access jsonb' : ''}) WHERE id=ANY($1)` :
       `SELECT ${publicProfile} AS profile FROM klan_users WHERE id=ANY($1)`;
     const rows = (await db.query(fields,[ids])).rows;
     const profiles = await memberships(db, rows.map(r => cards ? r : r.profile), drafts, cards);
@@ -168,19 +172,28 @@ export async function readList(db: PoolClient, resource: Resource, q: Query, dra
   return { data: await hydrateDetails(db,ids.map(id => byId.get(id)),drafts,false), meta:pageMeta };
 }
 
+export const activityTargetUserJoin = " LEFT JOIN klan_users target_user ON split_part(a.data#>>'{target,path}','/',2)='users' AND (target_user.id=split_part(a.data#>>'{target,path}','/',3) OR target_user.data->>'publicId'=split_part(a.data#>>'{target,path}','/',3))";
+export function activityIdentitySql(alias: 'actor' | 'target_user') {
+  return `(SELECT jsonb_strip_nulls(to_jsonb(identity) || jsonb_build_object('id',${alias}.id,
+    'hasActiveTeam',${alias}.id IN (${activeTeamUserIds})))
+    FROM jsonb_to_record(${alias}.data) identity("publicId" float8,name text,"firstName" text,"lastName" text,callsign text,initials text,color text)
+    WHERE ${alias}.id IS NOT NULL)`;
+}
+
 export async function readActivity(db: PoolClient, q: Page, drafts: boolean) {
   const join = `FROM klan_activities a LEFT JOIN klan_entities e ON (e.id=split_part(a.data#>>'{target,path}','/',3) OR e.card->>'publicId'=split_part(a.data#>>'{target,path}','/',3))
     AND e.kind=split_part(a.data#>>'{target,path}','/',2)`;
-  const actorJoin = " LEFT JOIN klan_users actor ON a.data#>>'{actor,publicId}' IS NULL AND actor.id=a.data#>>'{actor,id}'";
-  const userJoin = " LEFT JOIN klan_users u ON split_part(a.data#>>'{target,path}','/',2)='users' AND u.id=split_part(a.data#>>'{target,path}','/',3)";
+  const actorJoin = " LEFT JOIN klan_users actor ON actor.id=a.data#>>'{actor,id}'";
   const where = drafts ? '' : " WHERE e.card->>'status' IS DISTINCT FROM 'draft'";
   const total = (await db.query('SELECT count(*)::int AS n ' + (drafts ? 'FROM klan_activities' : join + where))).rows[0].n;
-  const rows = await db.query(`SELECT a.data, coalesce(e.kind,'users') AS kind, coalesce(e.card->>'publicId',u.data->>'publicId') AS number,
-    (actor.data->>'publicId')::float8 AS actor_number ${join}${userJoin}${actorJoin}${where}
+  const rows = await db.query(`SELECT a.data, coalesce(e.kind,'users') AS kind, coalesce(e.card->>'publicId',target_user.data->>'publicId') AS number,
+    ${activityIdentitySql('actor')} AS identity, ${activityIdentitySql('target_user')} AS target_identity
+    ${join}${activityTargetUserJoin}${actorJoin}${where}
     ORDER BY (a.data->>'createdAt') DESC, a.id LIMIT $1 OFFSET $2`, [q.limit,(q.page-1)*q.limit]);
   const data = rows.rows.map(row => {
     const activity: Activity = row.data;
-    if (row.actor_number) activity.actor.publicId = row.actor_number;
+    Object.assign(activity.actor, row.identity);
+    if (activity.target && row.target_identity) activity.target.user = row.target_identity;
     if (row.number && activity.target) activity.target.path = `/${row.kind}/${row.number}`;
     return activity;
   });

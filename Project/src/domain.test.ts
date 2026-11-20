@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSeed } from './seed.js';
 import { MemoryRepository } from './repository.js';
-import { editEntity, joinEntity, leaveEntity, querySchema, listResource, setResult, updateProfile, visibleState } from './domain.js';
+import { editEntity, joinEntity, leaveEntity, querySchema, listResource, publicActivity, setResult, updateProfile, visibleState } from './domain.js';
 import { profileEntryText } from './shared/profile-entries.js';
 
 test('one active team invariant applies even for concurrent joins', async () => {
@@ -15,6 +15,17 @@ test('one active team invariant applies even for concurrent joins', async () => 
 test('archive activation cannot violate active team membership', () => {
   const state = createSeed();
   assert.throws(() => editEntity(state, 'teams', 'team-4', { status: 'active' }, state.users[0]!), { code: 'ACTIVE_TEAM_EXISTS' });
+});
+test('activity avatars use current callsigns and membership even for old events', () => {
+  const state = createSeed();
+  const person = state.users[0]!, team = state.entities.find(e => e.id === 'team-1')!;
+  person.callsign = 'Сокол';
+  const event = {...state.activities[0]!, actor:{...state.activities[0]!.actor,id:person.id}, target:{path:'/users/'+person.id,title:person.name}};
+  const first = publicActivity(state,event);
+  assert.equal(first.actor.callsign,'Сокол');
+  assert.equal(first.target?.user?.hasActiveTeam,true);
+  team.status = 'archived';
+  assert.equal(publicActivity(state,event).actor.hasActiveTeam,false);
 });
 test('profile cannot modify role or somebody else', () => {
   const state = createSeed();
@@ -109,6 +120,18 @@ test('team challenge join requires active team membership and snapshots scoring 
   joinEntity(state, 'teams', 'team-1', user, {});
   const entity = joinEntity(state, 'challenges', 'challenge-1', user, { teamId: 'team-1' });
   assert.equal(entity.participants.find(p => p.user.id === user.id)?.team?.id, 'team-1');
+});
+test('counting challenges accept whole goals and results, while distances accept decimals', () => {
+  const now = new Date('2026-11-11T12:00:00Z'), date = '2026-11-11';
+  const state = createSeed(now), admin = state.users[0]!;
+  const challenge = state.entities.find(e => e.id === 'challenge-1')!;
+  assert.throws(() => setResult(state, challenge.id, admin, {date,value:2.5}, now), {code:'INVALID_CHALLENGE_RESULT'});
+  assert.throws(() => editEntity(state,'challenges',challenge.id,{goal:{target:3.5,unit:challenge.goal!.unit}},admin), {code:'INVALID_CHALLENGE_GOAL'});
+  challenge.goal!.target = 3.5;
+  assert.equal(editEntity(state,'challenges',challenge.id,{title:'Другое название'},admin).goal!.target,3.5);
+  challenge.category = 'distance';
+  const saved = setResult(state, challenge.id, admin, {date,value:2.5}, now);
+  assert.ok(saved.results?.some(r => r.user.id === admin.id && r.date === date && r.value === 2.5));
 });
 test('search covers facts and tags; pagination contains stable total', () => {
   const state = createSeed();

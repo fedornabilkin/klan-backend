@@ -128,12 +128,27 @@ export function visibleState(state: DatabaseState, actor: User): DatabaseState {
   const draftPaths = new Set(state.entities.filter(entity => entity.status === 'draft').flatMap(entity => [`/${entity.type}/${entity.id}`,`/${entity.type}/${entity.publicId}`]));
   return { ...state, entities: state.entities.filter(entity => entity.status !== 'draft'), activities: state.activities.filter(activity => !activity.target || !draftPaths.has(activity.target.path)) };
 }
+export function activeTeamMembers(entities: Entity[]): Set<string> {
+  return new Set(entities.filter(e => e.type === 'teams' && e.status === 'active')
+    .flatMap(team => team.participants.map(p => p.user.id)));
+}
+
+function activityIdentity(state: DatabaseState, user: Activity['actor'] | User) {
+  const { id, publicId, firstName, lastName, name, initials, color, callsign } = user;
+  const hasActiveTeam = state.entities.some(e => e.type === 'teams' && e.status === 'active' && e.participants.some(p => p.user.id === id));
+  return { id, publicId, firstName, lastName, name, initials, color, callsign, hasActiveTeam };
+}
 export function publicActivity(state: DatabaseState, activity: Activity): Activity {
-  const user = activity.actor.publicId ? undefined : state.users.find(u => u.id === activity.actor.id);
-  const actor = user?.publicId ? {...activity.actor,publicId:user.publicId} : activity.actor;
+  const user = state.users.find(u => u.id === activity.actor.id);
+  const actor = { ...activity.actor, ...activityIdentity(state, user ?? activity.actor) };
   if (!activity.target) return {...activity,actor};
   const [,type,id] = activity.target.path.split('/');
-  const record = type === 'users' ? state.users.find(u => u.id === id) : state.entities.find(e => e.type === type && e.id === id);
+  if (type === 'users') {
+    const target = state.users.find(u => u.id === id || String(u.publicId) === id);
+    return { ...activity, actor, target: target ? { title:target.name, path:`/users/${target.publicId ?? target.id}`,
+      user:activityIdentity(state,target) } : activity.target };
+  }
+  const record = state.entities.find(e => e.type === type && e.id === id);
   return { ...activity,actor,target:record?.publicId ? {...activity.target,path:`/${type}/${record.publicId}`} : activity.target };
 }
 export function requireAdmin(actor: User) { if (actor.role !== 'admin') throw forbidden(); }
@@ -216,6 +231,9 @@ function validateEntity(state: DatabaseState, entity: Entity, original?: Entity)
   if (entity.type === 'challenges' && !entity.goal) throw new HttpError(400, 'GOAL_REQUIRED', 'Укажите цель на одного участника');
   if (entity.type === 'challenges' && entity.category === 'attendance' && !Number.isInteger(entity.goal?.target))
     throw new HttpError(400, 'INVALID_ATTENDANCE_GOAL', 'Укажите целое число посещений на одного участника');
+  if (entity.type === 'challenges' && entity.category !== 'distance' && !Number.isInteger(entity.goal?.target)
+    && !(original && original.category === entity.category && original.goal?.target === entity.goal?.target))
+    throw new HttpError(400, 'INVALID_CHALLENGE_GOAL', 'Укажите целое число для цели');
   if (entity.capacity && entity.capacity < entity.participants.length) throw new HttpError(409, 'CAPACITY_TOO_SMALL', 'Лимит меньше текущего числа участников');
   if (entity.type === 'teams' && entity.status === 'active' && original?.status !== 'active') {
     const conflict = state.entities.some(team => team.type === 'teams' && team.id !== entity.id && team.status === 'active' && team.participants.some(p => entity.participants.some(other => other.user.id === p.user.id)));
@@ -292,6 +310,7 @@ export function setResult(state: DatabaseState, id: string, actor: User, input: 
   if (Date.parse(entity.schedule.start) > now.getTime()) throw new HttpError(409, 'CHALLENGE_NOT_STARTED', 'Челлендж ещё не начался');
   if (values.date < entity.schedule.start.slice(0, 10) || values.date > entity.schedule.end.slice(0, 10) || values.date > now.toISOString().slice(0, 10)) throw new HttpError(400, 'INVALID_RESULT_DATE', 'Дата должна находиться в периоде челленджа и не быть в будущем');
   if (entity.category === 'attendance' && ![0, 1].includes(values.value)) throw new HttpError(400, 'INVALID_ATTENDANCE', 'Для отметки посещения используйте 0 или 1');
+  if (entity.category !== 'distance' && !Number.isInteger(values.value)) throw new HttpError(400, 'INVALID_CHALLENGE_RESULT', 'Укажите целый результат');
   entity.results ??= [];
   const previous = entity.results.find(result => result.user.id === actor.id && result.date === values.date);
   if (previous) previous.value = values.value;

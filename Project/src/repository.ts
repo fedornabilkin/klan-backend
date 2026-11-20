@@ -6,7 +6,7 @@ import { HttpError, notFound } from './errors.js';
 import { migratedGoal, upgradeChallengeGoal } from './challenge-goals.js';
 import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admins.js';
 import { readProjections } from './read-projections.js';
-import { entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
+import { activeTeamUserIds, entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
 import type { Resource } from './shared/contracts.js';
 import { assignPublicIds } from './user-ids.js';
@@ -131,11 +131,11 @@ export class PostgresRepository implements Repository {
   async ping() { await this.pool.query('SELECT 1'); }
   async geographyUsers(overview = false): Promise<MapUser[]> {
     if (overview) {
-      return (await this.pool.query(`SELECT id,p.* FROM klan_users,jsonb_to_record(data) p(name text,"publicId" float8,
+      return (await this.pool.query(`SELECT id,id IN (${activeTeamUserIds}) AS "hasActiveTeam",p.* FROM klan_users,jsonb_to_record(data) p(name text,"firstName" text,"lastName" text,callsign text,"publicId" float8,
         location jsonb,initials text,color text,"joinedAt" text) ORDER BY id`)).rows as MapUser[];
     }
-    const result = await this.pool.query<MapUser>(`SELECT u.id, p.* FROM klan_users u,
-      jsonb_to_record(u.data) AS p(name text, username text, callsign text, bio text, location jsonb,
+    const result = await this.pool.query<MapUser>(`SELECT u.id, u.id IN (${activeTeamUserIds}) AS "hasActiveTeam", p.* FROM klan_users u,
+      jsonb_to_record(u.data) AS p(name text, "firstName" text, "lastName" text, username text, callsign text, bio text, location jsonb,
         interests jsonb, facts jsonb, achievements jsonb, tags jsonb, "joinedAt" text, "publicId" double precision,
         initials text, color text) ORDER BY u.id`);
     return result.rows;

@@ -74,6 +74,7 @@ function completeness(user: User): number {
 
 function memberIndex(state: DatabaseState, range: AnalyticsRange, activities: Activity[]) {
   const own = new Map<string,Activity[]>(), results = new Map<string,number>();
+  const activeMembers = new Set<string>();
   const current = new Map<string,{events:number;challenges:number;teams:number;books:number}>();
   for (const activity of activities) {
     const rows = own.get(activity.actor.id);
@@ -85,6 +86,7 @@ function memberIndex(state: DatabaseState, range: AnalyticsRange, activities: Ac
     const ids = kind === 'books' ? entity.readers?.map(u => u.id) : entity.participants.map(p => p.user.id);
     for (const id of new Set(ids)) {
       const counts = current.get(id) ?? {events:0,challenges:0,teams:0,books:0};
+      if (kind === 'teams' && entity.status === 'active') activeMembers.add(id);
       counts[kind]++;
       current.set(id,counts);
     }
@@ -92,14 +94,14 @@ function memberIndex(state: DatabaseState, range: AnalyticsRange, activities: Ac
       if (inRange(r.date,range)) results.set(r.user.id,(results.get(r.user.id) ?? 0)+1);
     }
   }
-  return {own,results,current};
+  return {own,results,current,activeMembers};
 }
 function memberRow(index: ReturnType<typeof memberIndex>, user: User, range: AnalyticsRange): AnalyticsMember {
   const ownActivities = index.own.get(user.id) ?? [];
   const period = ownActivities.filter(activity => inRange(activity.createdAt, range));
-  const { id, publicId, name, initials, color, role, joinedAt, location } = user;
+  const { id, publicId, name, firstName, lastName, callsign, initials, color, role, joinedAt, location } = user;
   return {
-    user: { id, publicId, name, initials, color, role, joinedAt, location },
+    user: { hasActiveTeam:index.activeMembers.has(id), id, publicId, name, firstName, lastName, callsign, initials, color, role, joinedAt, location },
     period: {
       actions: period.length,
       activeDays: new Set(period.map(activity => utcDay(activity.createdAt))).size,
@@ -202,6 +204,7 @@ export function memberAnalytics(state: DatabaseState, userId: string, range: Ana
   const user = getUser(state, userId);
   const activities = validActivities(state);
   const period = activities.filter(activity => activity.actor.id === user.id && inRange(activity.createdAt, range)).sort(byRecent);
+  const page = paginate(period, { page: query.activityPage, limit: query.activityLimit });
   const participationEntities = state.entities.filter(entity => entity.participants.some(participant => participant.user.id === user.id)
     || (entity.type === 'books' && entity.readers?.some(reader => reader.id === user.id)));
   return {
@@ -209,7 +212,7 @@ export function memberAnalytics(state: DatabaseState, userId: string, range: Ana
     participation: participationEntities.map(entity => ({ id: entity.id, ...(entity.publicId && { publicId: entity.publicId }), type: entity.type, title: entity.title, status: entity.status, start: entity.schedule?.start, end: entity.schedule?.end })),
     challenges: state.entities.filter(entity => entity.type === 'challenges' && (entity.participants.some(participant => participant.user.id === user.id) || entity.results?.some(result => result.user.id === user.id))).map(entity => challenge(entity, range, user.id)),
     actions: grouped(period.map(activity => activity.action)),
-    activity: paginate(period.map(a => publicActivity(state,a)), { page: query.activityPage, limit: query.activityLimit }),
+    activity: { ...page, data:page.data.map(a => publicActivity(state,a)) },
   };
 }
 

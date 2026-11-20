@@ -1,19 +1,23 @@
 import type { PoolClient } from 'pg';
 import { emptyState } from './repository.js';
 import type { Entity, User } from './shared/contracts.js';
+import { activityIdentitySql, activityTargetUserJoin } from './resource-reads.js';
 import { notFound } from './errors.js';
 
 export async function analyticsState(db: PoolClient, member?: string) {
   const state = emptyState();
-  const profiles = await db.query(`SELECT id,p.* FROM klan_users,jsonb_to_record(data) p("publicId" float8,name text,username text,
+  const profiles = await db.query(`SELECT id,p.* FROM klan_users,jsonb_to_record(data) p("publicId" float8,name text,"firstName" text,"lastName" text,callsign text,username text,
     initials text,color text,role text,"joinedAt" text,location jsonb,bio text,tags jsonb,facts jsonb,interests jsonb,achievements jsonb)
     ${member ? "WHERE id=$1 OR data->>'publicId'=$1" : ''} ORDER BY id`, member ? [member] : []);
   state.users = profiles.rows as User[];
   if (member && !state.users.length) throw notFound();
   const args = member ? [state.users[0]!.id] : [];
   state.activities = (await db.query(`SELECT a.data, e.card->>'publicId' AS number, e.kind
+    ${member ? ',' + activityIdentitySql('target_user') + ' AS target_identity' : ''}
     FROM klan_activities a LEFT JOIN klan_entities e ON e.id=split_part(a.data#>>'{target,path}','/',3) AND e.kind=split_part(a.data#>>'{target,path}','/',2)
+    ${member ? activityTargetUserJoin : ''}
     ${member ? "WHERE a.data#>>'{actor,id}'=$1" : ''} ORDER BY a.id`,args)).rows.map(row => {
+    if (row.target_identity && row.data.target) row.data.target.user = row.target_identity;
     if (row.number && row.data.target) row.data.target.path = '/' + row.kind + '/' + row.number;
     return row.data;
   });

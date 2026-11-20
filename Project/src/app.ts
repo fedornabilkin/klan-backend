@@ -6,12 +6,12 @@ import { constants as zlib } from 'node:zlib';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import type { Activity, Entity, Resource, User } from './shared/contracts.js';
+import type { Activity, Entity, Resource, User, UserIdentity } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, Repository } from './repository.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
 import { compactDetail, entityCard, userCard } from './resource-reads.js';
-import { publicActivity } from './domain.js';
+import { activeTeamMembers, publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
 import { userPath } from './shared/user-links.js';
 import { createAuth, type AuthDependencies } from './auth.js';
@@ -57,7 +57,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   };
   const botChannel = createBotChannel();
   const auth = createAuth(repo, config, async (actor, action) => {
-    const activity = await repo.write(state => addActivity(state, actor, action));
+    const activity = await repo.write(state => publicActivity(state, addActivity(state, actor, action)));
     notify('users', activity);
   }, authDependencies ?? botChannel);
   // A service endpoint, outside browser cookie authentication and Origin handling.
@@ -140,8 +140,11 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     const params = query(req);
     const unfiltered = !params.q && !params.tag && !params.city && !params.category && !params.status && params.sort === '-createdAt';
     await sendPage(req, res, unfiltered ? 'geography' : undefined, async () => {
-      const users = repo.geographyUsers ? await repo.geographyUsers(unfiltered) : await repo.read(state => state.users);
-      const cities = new Map<string, { id: string; city: string; country: string; lat: number; lng: number; count: number; users: Pick<User, 'id' | 'publicId' | 'name' | 'initials' | 'color'>[] }>();
+      const users = repo.geographyUsers ? await repo.geographyUsers(unfiltered) : await repo.read(state => {
+        const members = activeTeamMembers(state.entities);
+        return state.users.map(user => ({...user, hasActiveTeam:members.has(user.id)}));
+      });
+      const cities = new Map<string, { id: string; city: string; country: string; lat: number; lng: number; count: number; users: UserIdentity[] }>();
       for (const user of filtered(users, params)) {
         const { lat, lng } = user.location;
         const city = user.location.city.trim(), country = user.location.country.trim();
@@ -150,7 +153,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
         const key = `${country}:${city}`.toLocaleLowerCase('ru');
         const point = cities.get(key) ?? { id: key, city, country, lat, lng, count: 0, users: [] };
         point.count++;
-        if (point.users.length < 5) point.users.push({ id: user.id, publicId: user.publicId ?? undefined, name: user.name, initials: user.initials, color: user.color });
+        if (point.users.length < 5) point.users.push({ id: user.id, publicId: user.publicId ?? undefined, name: user.name, firstName:user.firstName, lastName:user.lastName, callsign:user.callsign, hasActiveTeam:user.hasActiveTeam, initials: user.initials, color: user.color });
         cities.set(key, point);
       }
       return [...cities.values()];
@@ -250,8 +253,11 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       const state = visibleState(raw,req.user!);
       if (collection === 'users') return hydrateUser(state,getUser(state,id));
       const entity = getEntity(state,collection,id);
-      return compact ? compactDetail(entity,new Map(state.users.map(u => [u.id,u])),new Map(state.entities.filter(t => t.type === 'teams')
-        .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}]))) : hydrateEntity(state,entity);
+      if (!compact) return hydrateEntity(state,entity);
+      const members = activeTeamMembers(state.entities);
+      const users = new Map(state.users.map(user => [user.id,{...user,hasActiveTeam:members.has(user.id)}]));
+      return compactDetail(entity,users,new Map(state.entities.filter(t => t.type === 'teams')
+        .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}])));
     }), id);
   });
   app.post('/api/:resource', async (req, res) => {

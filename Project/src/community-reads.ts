@@ -3,7 +3,7 @@ import type { Entity, Statistics, User } from './shared/contracts.js';
 import type { SearchUser } from './domain.js';
 import { profileEntryText } from './shared/profile-entries.js';
 
-export type MapUser = SearchUser & Pick<User, 'publicId' | 'initials' | 'color'>;
+export type MapUser = SearchUser & Pick<User, 'publicId' | 'initials' | 'color' | 'firstName' | 'lastName' | 'hasActiveTeam'>;
 type StatisticsUser = Pick<User, 'tags' | 'achievements'> & { city: string };
 
 export function rankingCandidates(entities: Entity[], now: Date) {

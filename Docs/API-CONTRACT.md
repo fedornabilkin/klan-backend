@@ -7,6 +7,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - POST /auth/telegram/start -> {id,botUrl,expiresAt,displayCode}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'rejected'|'denied',user?:User} (sets session after approval in Telegram); POST /auth/telegram/cancel/:id -> 204 (cancels the initiating browser's request)
 - GET /users|events|teams|challenges|news|feedback|books|rules with page,limit,q,sort (`name`, `-name`, `createdAt`, `-createdAt`),status,category,tag (comma separated),city
 - GET /:resource?view=cards returns list fields, `participantCount` and `readerCount`. Team pages request `limit=30`.
+- Compact user references in member cards, detail dictionaries, geography, analytics and activity include available name parts, callsign and `hasActiveTeam`. The membership flag uses the current roster of active teams. Each challenge result retains its original scoring team.
 - GET /:resource/:id -> User or Entity. With `view=detail`, entity responses include `people` and `teams` dictionaries. A nested user or team reference is its zero-based array index. Results and pending results preserve their order, dates and values. For challenges, the team dictionary also includes every visible team with zero or more entries. A challenge goal has `scope: "participant"`. Its positive `target` applies to one enrolled person. Team and challenge targets multiply it by their distinct enrolled members, including solo members in the overall target.
 - GET /dashboard?view=cards includes card summaries, the first five activity entries and `activityTotal`. GET /tags?usage=1 includes the member count for each tag.
 - The compact dashboard also returns `teamRanking` with the challenge reference, unit and up to four published teams ordered by their confirmed team results. Among challenges with team results it selects the most recently started ongoing one, falling back to the most recently finished one. Without any confirmed team results the ranking is null.
@@ -17,6 +18,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - POST /events|teams|challenges/:id/join {teamId?}; DELETE /events|teams|challenges/:id/join
 - PUT /events/:id/items {items: [{id,name,quantity}]} (own participant)
 - PUT /challenges/:id/results {date:'YYYY-MM-DD',value:number} (own participant, before challenge finish, date within schedule and not future)
+- Counted exercises and visits use whole numbers for new goals and results. Distance and geographic coordinates accept decimals.
 - PUT /books/:id/read {read:boolean}
 - GET /dashboard -> Dashboard; GET /activity (paginated); GET /stats -> Statistics
 - GET /users/me/export -> own profile JSON; POST /users/me/import {profile:{name,bio,location,facts,interests,achievements,tags}} -> User
