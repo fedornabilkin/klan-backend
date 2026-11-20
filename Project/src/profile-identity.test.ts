@@ -11,7 +11,7 @@ import { createAuth } from './auth.js';
 import { createApp } from './app.js';
 import type { Config } from './config.js';
 
-const identity = { firstName: ' Роман ', middleName: ' Сергеевич ', lastName: ' Смирнов ', callsign: ' Фёдор Набилкин ', username: ' @fedornabilkin ', birthDate: '1988-02-29' };
+const identity = { firstName: ' Роман ', middleName: ' Сергеевич ', lastName: ' Смирнов ', callsign: ' Фёдор Набилкин ', username: ' @fedornabilkin ', birthDate: '1988-02-29', clanJoinedOn: '2012-07-08' };
 const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: [], adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-1', demoAccessLevel: 'admin' };
 
 test('identity saves name parts, callsign, username and birth date together without altering Telegram bindings', () => {
@@ -25,6 +25,7 @@ test('identity saves name parts, callsign, username and birth date together with
   assert.equal(saved.callsign, 'Фёдор Набилкин');
   assert.equal(saved.username, 'fedornabilkin');
   assert.equal(saved.birthDate, '1988-02-29');
+  assert.equal(saved.clanJoinedOn, '2012-07-08');
   assert.equal(saved.initials, 'РС');
   assert.deepEqual(state.telegramUsers, { '12345': user.id });
   updateProfile(state, user.id, { username: null, birthDate: null }, user);
@@ -147,9 +148,26 @@ test('profile export and import preserve structured identity fields', async t =>
   assert.equal(profile.lastName, 'Смирнов');
   assert.equal(profile.middleName, 'Сергеевич');
   assert.equal(profile.birthDate, '1988-02-29');
+  assert.equal(profile.clanJoinedOn, '2012-07-08');
+  assert.equal(profile.joinedAt, undefined);
   assert.equal(profile.username, 'fedornabilkin');
   assert.equal(profile.activeTeams, undefined);
   const imported = await fetch(`${base}/users/me/import`, { method: 'POST', headers, body: JSON.stringify({ profile }) });
   assert.equal(imported.status, 200);
-  assert.equal((await imported.json()).data.name, 'Роман Сергеевич Смирнов');
+  const restored = (await imported.json()).data;
+  assert.equal(restored.name, 'Роман Сергеевич Смирнов');
+  assert.equal(restored.clanJoinedOn, '2012-07-08');
+});
+
+test('membership date is optional, editable and independent of account registration', () => {
+  const state = createSeed(), user = state.users[1]!;
+  const registration = user.joinedAt;
+  assert.equal(hydrateUser(state,user).clanJoinedOn, undefined);
+  assert.equal(updateProfile(state,user.id,{clanJoinedOn:'2012-02-29'},user).clanJoinedOn,'2012-02-29');
+  for (const invalid of ['2025-02-29','9999-12-31','']) {
+    assert.throws(() => updateProfile(state,user.id,{clanJoinedOn:invalid},user));
+  }
+  assert.equal(updateProfile(state,user.id,{bio:'Старый импорт'},user).clanJoinedOn,'2012-02-29');
+  assert.equal(updateProfile(state,user.id,{clanJoinedOn:null},user).clanJoinedOn,null);
+  assert.equal(user.joinedAt,registration);
 });

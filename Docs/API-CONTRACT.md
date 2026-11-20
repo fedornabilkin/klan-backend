@@ -12,7 +12,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - GET /dashboard?view=cards includes card summaries, the first five activity entries and `activityTotal`. GET /tags?usage=1 includes the member count for each tag.
 - The compact dashboard also returns `teamRanking` with the challenge reference, unit and up to four published teams ordered by their confirmed team results. Among challenges with team results it selects the most recently started ongoing one, falling back to the most recently finished one. Without any confirmed team results the ranking is null.
 - POST /:resource, PATCH /:resource/:id, DELETE /:resource/:id (admin; member may create feedback, owner edit feedback; user may edit self)
-- PATCH /users/:id accepts own name,firstName,lastName,middleName,callsign,username,birthDate,bio,location,facts,interests,achievements,tags; profile facts and achievements may include a date
+- PATCH /users/:id accepts name, firstName, lastName, middleName, callsign, username, birthDate, clanJoinedOn, bio, location, facts, interests, achievements and tags for the user’s own profile. Facts and achievements may include a date. Optional `clanJoinedOn` stores the actual membership date (YYYY-MM-DD). Send `null` to clear it. The server records account creation independently in `joinedAt`.
 - POST /users/:id/tags {name} creates/assigns a normalized one-word tag to the current user's profile
 - GET /tags; POST /tags {name}; GET /items; POST /items {name}
 - POST /events|teams|challenges/:id/join {teamId?}; DELETE /events|teams|challenges/:id/join

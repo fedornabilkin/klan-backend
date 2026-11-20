@@ -115,9 +115,9 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     res.json(result);
   });
   app.get('/api/users/me/export', async (req, res) => {
-    const { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags } =
+    const { name, firstName, middleName, lastName, callsign, username, birthDate, clanJoinedOn, bio, location, facts, interests, achievements, tags } =
       repo.exportProfile ? await repo.exportProfile(req.user!.id) : await repo.read(s => hydrateUser(s,getUser(s,req.user!.id)));
-    const profile = { name, firstName, middleName, lastName, callsign, username, birthDate, bio, location, facts, interests, achievements, tags };
+    const profile = { name, firstName, middleName, lastName, callsign, username, birthDate, clanJoinedOn, bio, location, facts, interests, achievements, tags };
     res.json({ data: { version: 1, profile } });
   });
   app.post('/api/users/me/import', async (req, res) => {

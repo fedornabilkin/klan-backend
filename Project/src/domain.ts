@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Activity, Entity, Resource, User } from './shared/contracts.js';
 import { isCalendarDate, normalizeProfileEntries, profileEntryText } from './shared/profile-entries.js';
-import { formatProfileName, normalizeTelegramUsername } from './shared/profile-identity.js';
+import { formatProfileName, latestProfileDate, normalizeTelegramUsername } from './shared/profile-identity.js';
 import type { DatabaseState } from './repository.js';
 import { forbidden, HttpError, notFound } from './errors.js';
 import { hasCapability, requireCapability } from './access.js';
@@ -36,12 +36,13 @@ const locationSchema = z.object({
 }).refine(location => (location.lat === null) === (location.lng === null), {
   message: 'Укажите обе координаты или оставьте обе пустыми', path: ['lng'],
 });
+const profileDateSchema = z.string().refine(isCalendarDate, 'Укажите корректную календарную дату ГГГГ-ММ-ДД')
+  .refine(value => value <= latestProfileDate(), 'Дата не может быть в будущем').nullable().optional();
 export const profileSchema = z.object({
   name: shortText.optional(), bio: z.string().trim().max(5000).optional(), location: locationSchema.optional(),
   firstName: shortText.optional(), lastName: z.string().trim().max(120).optional(), middleName: z.string().trim().max(120).optional(),
   username: z.string().transform(normalizeTelegramUsername).refine(value => !value || /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(value), 'Укажите Telegram username: 5–32 латинских символа, цифры и подчёркивания, начиная с буквы').nullable().optional(),
-  birthDate: z.string().refine(isCalendarDate, 'Укажите корректную календарную дату YYYY-MM-DD')
-    .refine(value => value <= new Date().toISOString().slice(0, 10), 'Дата рождения не может быть в будущем').nullable().optional(),
+  birthDate: profileDateSchema, clanJoinedOn: profileDateSchema,
   callsign: z.string().trim().max(120).optional(),
   facts: profileEntriesSchema.optional(), interests: stringList.optional(), achievements: profileEntriesSchema.optional(),
   tags: z.array(tagSchema).max(30).optional(),
