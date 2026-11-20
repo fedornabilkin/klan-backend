@@ -10,7 +10,7 @@ import type { Activity, Entity, Resource, User, UserIdentity } from './shared/co
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, Repository } from './repository.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
-import { compactDetail, entityCard, teamChallengeHistory, userCard } from './resource-reads.js';
+import { compactDetail, entityCard, teamChallengeSummaries, userCard } from './resource-reads.js';
 import { excludeTeamMember, setTeamRole } from './team-members.js';
 import { activeTeamMembers, publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
@@ -273,7 +273,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       if (!compact) return hydrateEntity(state,entity);
       const members = activeTeamMembers(state.entities);
       const users = new Map(state.users.map(user => [user.id,{...user,hasActiveTeam:members.has(user.id)}]));
-      if (collection === 'teams') entity.teamChallenges = teamChallengeHistory(state.entities, entity.id);
+      if (collection === 'teams') Object.assign(entity, teamChallengeSummaries(state.entities, entity.id));
       return compactDetail(entity,users,new Map(state.entities.filter(t => t.type === 'teams')
         .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}])));
     }), id);

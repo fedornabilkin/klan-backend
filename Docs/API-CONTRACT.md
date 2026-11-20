@@ -15,7 +15,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - PATCH /users/:id accepts name, firstName, lastName, middleName, callsign, username, birthDate, clanJoinedOn, bio, location, facts, interests, achievements and tags for the user’s own profile. Facts and achievements may include a date. Optional `clanJoinedOn` stores the actual membership date (YYYY-MM-DD). Send `null` to clear it. The server records account creation independently in `joinedAt`.
 - POST /users/:id/tags {name} creates/assigns a normalized one-word tag to the current user's profile
 - GET /tags; POST /tags {name}; GET /items; POST /items {name}
-- Team listings default to ascending Russian name order. Compact team details include `participants[].teamRole` (default `member`) and `teamChallenges` with the score, target and unit for each finished challenge the team entered.
+- Team listings default to ascending Russian name order. Compact team details include `participants[].teamRole` (default `member`) and separate lists of ongoing (`activeTeamChallenges`) and finished (`teamChallenges`) challenges the team entered. Each list is newest first. Each summary includes distinct enrolled `members`, `personalTarget`, team `target`, confirmed `score` and `unit`.
 - PUT /teams/:id/members/:userId/role accepts `{role}` (`captain`, `deputy` or `member`). POST /teams/:id/members/:userId/exclude requires `{comment}` (1–1000 characters after trimming). Both require `members.manage`.
 - POST /events|teams|challenges/:id/join {teamId?}; DELETE /events|teams|challenges/:id/join
 - PUT /events/:id/items {items: [{id,name,quantity}]} (own participant)

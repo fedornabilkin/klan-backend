@@ -4,7 +4,7 @@ import { accessForLevel } from './access.js';
 import { MemoryRepository } from './repository.js';
 import { createSeed } from './seed.js';
 import { excludeTeamMember, setTeamRole } from './team-members.js';
-import { teamChallengeHistory } from './resource-reads.js';
+import { teamChallengeSummaries } from './resource-reads.js';
 
 test('team roles belong to the roster and concurrent assignments leave one captain and multiple deputies', async () => {
   const seed = createSeed(), admin = seed.users[0]!, repo = new MemoryRepository(seed);
@@ -41,11 +41,11 @@ test('removal requires a comment, records the administrator and preserves histor
   const ref = { id: team.id, title: team.title };
   challenge.participants = [{user:admin,team:ref},{user:member,team:ref},{user:member,team:ref}];
   challenge.participants.push({user:member,team:{id:'team-2',title:'Другая команда'}});
-  assert.equal(teamChallengeHistory([challenge], 'team-2').filter(h => h.target).length, 0);
+  assert.equal(teamChallengeSummaries([challenge], 'team-2').teamChallenges.filter(h => h.target).length, 0);
   challenge.results = [{user:member,team:ref,value:17,date:'2020-02-01'}, {user:admin,value:8,date:'2020-02-01'}];
   challenge.pendingResults = [{user:member,team:ref,value:100,reason:'Нет даты',sourceCell:'А1'}];
-  const history = () => teamChallengeHistory(state.entities,team.id);
-  assert.deepEqual(history().map(h => [h.score,h.target,h.unit]), [[17,2000,'раз']]);
+  const history = () => teamChallengeSummaries(state.entities,team.id).teamChallenges;
+  assert.deepEqual(history().map(h => [h.score,h.target,h.unit,h.members,h.personalTarget]), [[17,2000,'раз',2,1000]]);
   setTeamRole(state,team.id,member.id,{role:'captain'},admin);
   assert.throws(() => excludeTeamMember(state,team.id,member.id,{comment:'  '},admin));
   assert.equal(state.teamExclusions.length, 0);
@@ -58,5 +58,8 @@ test('removal requires a comment, records the administrator and preserves histor
   assert.equal(state.teamExclusions.length,1);
   challenge.status = 'draft'; assert.equal(history().length,0);
   challenge.status = 'active'; assert.equal(history().length,0);
-  challenge.schedule!.end = '2012-01-01'; challenge.results = []; assert.equal(history()[0]!.score,0);
+  const current = () => teamChallengeSummaries([challenge],team.id).activeTeamChallenges;
+  assert.deepEqual(current().map(h => [h.score,h.members,h.personalTarget,h.target]), [[17,2,1000,2000]]);
+  challenge.schedule = {start:'2099-01-01',end:'2099-02-01'}; assert.equal(current().length,0);
+  challenge.schedule = {start:'2011-12-01',end:'2012-01-01'}; challenge.results = []; assert.equal(history()[0]!.score,0);
 });
