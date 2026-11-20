@@ -12,7 +12,7 @@ export interface NetworkEnrichment {
   lat?: number | null; lng?: number | null; geonameId?: number | string | null;
 }
 export interface ImportProvenance {
-  importer: 'pcm-helper'; version: 1; sourceHash: string; sourceName?: string;
+  importer: 'klan-network' | 'pcm-helper'; version: 1; sourceHash: string; sourceName?: string;
   sourceId: string; nodeUid: string; importedAt: string;
 }
 export interface NetworkImportedProfile extends User { importProvenance: ImportProvenance }
@@ -56,7 +56,7 @@ function uid(value: unknown): string {
 export const normalizeImportTagName = (value: string): string => value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
 const tagKey = (value: string) => normalizeImportTagName(value).toLocaleLowerCase('ru');
 const usernameKey = (value: string | undefined) => (value ?? '').trim().replace(/^@/, '').toLowerCase();
-const tagId = (key: string) => `pcm-tag-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+const tagId = (key: string) => `tag-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
 const channelContext = /(?:канал|блог|channel|blog|чат|группа|group|бот|\bbot\b)/iu;
 const personalContext = /(?:личн|личка|профиль|контакт|связаться|telegram|телеграм|\bтг\b|\btg\b)/iu;
 const reservedLinks = new Set(['joinchat', 'share', 'addstickers', 'addemoji', 'proxy', 'socks', 'login', 'iv', 'boost']);
@@ -157,10 +157,6 @@ export function prepareNetworkImport(source: unknown, enrichments: readonly Netw
     if (!name.trim() || name.length > 120) fail('INVALID_SOURCE_PROFILE', `Invalid name at source node ${id}`);
     const bio = string(node.description, 'node.description', true);
     if (bio.length > 5000) fail('INVALID_SOURCE_PROFILE', `Bio exceeds profile limit at source node ${id}`);
-    const pcm = node.pcm == null ? undefined : object(node.pcm, 'pcm');
-    const filter = pcm?.filter == null ? undefined : object(pcm.filter, 'pcm.filter');
-    const label = filter ? string(filter.label, 'pcm.filter.label', true).trim() : '';
-    if (label) facts.push(`PCM (из исходного файла): ${label}`);
     const enrichment = enrichmentMap.get(id);
     const location = locationFor(enrichment);
     const selectedTags = new Map<string, Tag>();
@@ -169,15 +165,16 @@ export function prepareNetworkImport(source: unknown, enrichments: readonly Netw
       if (!tag) fail('UNKNOWN_SOURCE_TAG', `Unknown tag reference at source node ${id}`);
       selectedTags.set(tag!.id, tag!);
     }
+    const profileId = `member-${nodeUid}`;
     profiles.push({
-      id: `pcm-${nodeUid}`, name, username: contact.username, role: 'member', bio, location,
+      id: profileId, name, username: contact.username, role: 'member', bio, location,
       tags: [...selectedTags.values()].map(tag => ({ ...tag })),
       initials: name.trim().split(/\s+/u).slice(0, 2).map(part => part[0]).join('').toUpperCase(), color: '#b57439',
-      facts: normalizeProfileEntries(facts, `pcm-${nodeUid}:facts`),
+      facts: normalizeProfileEntries(facts, `${profileId}:facts`),
       interests: enrichmentStrings(enrichment?.interests, 'interests'),
-      achievements: normalizeProfileEntries(enrichmentStrings(enrichment?.achievements, 'achievements'), `pcm-${nodeUid}:achievements`),
+      achievements: normalizeProfileEntries(enrichmentStrings(enrichment?.achievements, 'achievements'), `${profileId}:achievements`),
       stats: { events: 0, challenges: 0, books: 0 }, joinedAt: info.importedAt,
-      importProvenance: { importer: 'pcm-helper', version: 1, sourceHash: info.sourceHash, sourceName: info.sourceName, sourceId: id, nodeUid, importedAt: info.importedAt },
+      importProvenance: { importer: 'klan-network', version: 1, sourceHash: info.sourceHash, sourceName: info.sourceName, sourceId: id, nodeUid, importedAt: info.importedAt },
     });
     if (contact.kind === 'primary') summary.primaryContacts++;
     else if (contact.kind === 'link') summary.linkContacts++;
@@ -199,12 +196,17 @@ export function prepareNetworkImport(source: unknown, enrichments: readonly Netw
 export function applyNetworkImport(state: DatabaseState, plan: NetworkImportPlan): NetworkImportResult {
   const info = validateSourceInfo(plan.sourceInfo);
   const existingUsers = new Map(state.users.map(user => [user.id, user]));
+  const importedNodes = new Map<string, User>();
   const existingUsernames = new Map<string, string[]>();
   for (const user of state.users) {
     const key = usernameKey(user.username);
     if (key) existingUsernames.set(key, [...existingUsernames.get(key) ?? [], user.id]);
     const provenance = (user as Partial<NetworkImportedProfile>).importProvenance;
-    if (provenance?.importer === 'pcm-helper' && provenance.sourceHash !== info.sourceHash) fail('SOURCE_CHANGED', 'A previous PCM import has a different source hash; review is required');
+    if (provenance && ['klan-network','pcm-helper'].includes(provenance.importer)) {
+      if (provenance.sourceHash !== info.sourceHash) fail('SOURCE_CHANGED', 'A previous network import has a different source hash; review is required');
+      if (importedNodes.has(provenance.nodeUid)) fail('ID_CONFLICT', 'Multiple profiles refer to the same source node');
+      importedNodes.set(provenance.nodeUid, user);
+    }
   }
   const pending: NetworkImportedProfile[] = [];
   const seenIds = new Set<string>();
@@ -212,14 +214,15 @@ export function applyNetworkImport(state: DatabaseState, plan: NetworkImportPlan
   let skippedUsers = 0;
   for (const profile of plan.profiles) {
     const provenance = profile.importProvenance;
-    if (profile.role !== 'member' || profile.access !== undefined || !provenance || provenance.importer !== 'pcm-helper' || provenance.version !== 1
-      || provenance.sourceHash !== info.sourceHash || profile.id !== `pcm-${uid(provenance.nodeUid)}` || profile.joinedAt !== info.importedAt) fail('UNSAFE_IMPORT_PLAN', 'The import plan must contain only member profiles with matching provenance');
+    if (profile.role !== 'member' || profile.access !== undefined || !provenance || !['klan-network','pcm-helper'].includes(provenance.importer) || provenance.version !== 1
+      || provenance.sourceHash !== info.sourceHash || profile.id !== (provenance.importer === 'pcm-helper' ? 'pcm-' : 'member-') + uid(provenance.nodeUid) || profile.joinedAt !== info.importedAt) fail('UNSAFE_IMPORT_PLAN', 'The import plan must contain only member profiles with matching provenance');
     const key = usernameKey(profile.username);
-    if (!key || seenIds.has(profile.id) || seenUsernames.has(key)) fail('DUPLICATE_USERNAME', 'Duplicate or missing identity in import plan');
-    seenIds.add(profile.id); seenUsernames.add(key);
-    const existing = existingUsers.get(profile.id) as NetworkImportedProfile | undefined;
-    if (existing && (existing.importProvenance?.importer !== 'pcm-helper' || existing.importProvenance.sourceHash !== info.sourceHash || existing.importProvenance.nodeUid !== provenance.nodeUid)) fail('ID_CONFLICT', `Existing profile ID conflicts with source node ${provenance.sourceId}`);
-    if ((existingUsernames.get(key) ?? []).some(id => id !== profile.id)) fail('USERNAME_CONFLICT', `Existing Telegram username conflicts with source node ${provenance.sourceId}`);
+    if (!key || seenIds.has(provenance.nodeUid) || seenUsernames.has(key)) fail('DUPLICATE_USERNAME', 'Duplicate or missing identity in import plan');
+    seenIds.add(provenance.nodeUid); seenUsernames.add(key);
+    const stored = existingUsers.get(profile.id);
+    const existing = importedNodes.get(provenance.nodeUid);
+    if (stored && stored !== existing) fail('ID_CONFLICT', `Existing profile ID conflicts with source node ${provenance.sourceId}`);
+    if ((existingUsernames.get(key) ?? []).some(id => id !== existing?.id)) fail('USERNAME_CONFLICT', `Existing Telegram username conflicts with source node ${provenance.sourceId}`);
     if (existing) { skippedUsers++; continue; }
     pending.push(profile);
   }

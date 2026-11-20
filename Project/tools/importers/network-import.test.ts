@@ -30,18 +30,18 @@ test('selects personal standalone handles in facts; avoids email, descriptions, 
   assert.deepEqual(plan.profiles[2]!.facts.map(profileEntryText), ['@FirstPerson @Other_blog user@example.com']);
 });
 
-test('preserves full facts, bio and explicit PCM label; ignores graph fields and inferred traits', () => {
+test('preserves original facts and bio without importing external profile classifications', () => {
   const originalFacts = ['@full_profile', '  phone +7 123; ДР 2009  ', 'x'.repeat(282), '', '   '];
   const raw = node(1, originalFacts, { x: 43, y: 20, fill: '#ff0000', createdAt: '1980-01-01',
     pcm: { filter: { label: 'Логик' } }, pcmHint: { filter: 'empath', confidence: 'high' } });
   const plan = prepareNetworkImport(source([raw]), [], info);
   const profile = plan.profiles[0]!;
   assert.equal(profile.bio, raw.description);
-  assert.deepEqual(profile.facts.map(profileEntryText), [...originalFacts.slice(0, 3), 'PCM (из исходного файла): Логик']);
+  assert.deepEqual(profile.facts.map(profileEntryText), originalFacts.slice(0, 3));
   assert.ok(profile.facts.every(fact => typeof fact !== 'string' && fact.date === null));
   assert.equal(plan.summary.maxFactLength, 282);
   assert.equal(profile.joinedAt, info.importedAt);
-  assert.equal(profile.id, 'pcm-node-1');
+  assert.equal(profile.id, 'member-node-1');
   assert.equal(profile.color, '#b57439');
   for (const key of ['x', 'y', 'fill', 'pcmHint', 'links', 'birthDate', 'createdAt']) assert.equal(key in profile, false);
   assert.deepEqual(Object.keys(profile.importProvenance).sort(), ['importedAt', 'importer', 'nodeUid', 'sourceHash', 'sourceId', 'sourceName', 'version']);
@@ -142,4 +142,15 @@ test('tampered plan cannot elevate permissions and invalid tag references cannot
   plan.profiles[0]!.tags.push({ id: 'absent', name: 'Absent' });
   assert.throws(() => applyNetworkImport(state, plan), { code: 'UNKNOWN_IMPORT_TAG' });
   assert.deepEqual(state, emptyState());
+});
+
+test('keeps existing member links across importer versions', () => {
+  const plan = prepareNetworkImport(source([node(1, ['@person_one'])]), [], info);
+  const state = emptyState();
+  const legacy = structuredClone(plan.profiles[0]!);
+  legacy.id = 'pcm-node-1';
+  legacy.importProvenance.importer = 'pcm-helper';
+  state.users.push(legacy);
+  assert.equal(applyNetworkImport(state, plan).skippedUsers, 1);
+  assert.deepEqual(state.users.map(user => user.id), ['pcm-node-1']);
 });

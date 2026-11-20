@@ -2,6 +2,7 @@ import { assignPublicIds } from './user-ids.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Activity, Entity, Resource, User } from './shared/contracts.js';
+import { parseTagFilter } from './shared/tag-names.js';
 import { isCalendarDate, normalizeProfileEntries, profileEntryText } from './shared/profile-entries.js';
 import { formatProfileName, latestProfileDate, normalizeTelegramUsername } from './shared/profile-identity.js';
 import type { DatabaseState } from './repository.js';
@@ -74,12 +75,16 @@ export const querySchema = z.object({
 });
 export type Query = z.infer<typeof querySchema>;
 
+function communityFact(entry: User['facts'][number]) {
+  return !profileEntryText(entry).startsWith('PCM (из исходного файла):');
+}
+
 export function profileWithMemberships(user: User, activeTeams: NonNullable<User['activeTeams']>, stats: User['stats']): User {
   // Import provenance includes an authentication identity and stays server-side.
-  const { communityImport: _communityImport, historicalImport: _historicalImport, ...profile } = user as User & { communityImport?: unknown; historicalImport?: unknown };
+  const { communityImport: _communityImport, historicalImport: _historicalImport, importProvenance: _source, ...profile } = user as User & { communityImport?: unknown; historicalImport?: unknown; importProvenance?: unknown };
   return { ...profile,
     activeTeams, stats,
-    facts: normalizeProfileEntries(user.facts, `${user.id}:facts`),
+    facts: normalizeProfileEntries((user.facts ?? []).filter(communityFact), `${user.id}:facts`),
     achievements: normalizeProfileEntries(user.achievements, `${user.id}:achievements`),
   };
 }
@@ -157,11 +162,11 @@ export function requireAdmin(actor: User) { if (actor.role !== 'admin') throw fo
 export type SearchUser = Pick<User, 'id' | 'name' | 'username' | 'callsign' | 'bio' | 'location' | 'interests' | 'facts' | 'achievements' | 'tags' | 'joinedAt'>;
 function searchText(record: SearchUser | Entity) {
   return 'name' in record
-    ? [record.name, record.username, record.callsign, record.bio, record.location.city, record.location.country, ...record.interests, ...record.facts.map(profileEntryText), ...record.achievements.map(profileEntryText), ...record.tags.map(t => t.name)].join(' ')
+    ? [record.name, record.username, record.callsign, record.bio, record.location.city, record.location.country, ...record.interests, ...record.facts.filter(communityFact).map(profileEntryText), ...record.achievements.map(profileEntryText), ...record.tags.map(t => t.name)].join(' ')
     : [record.title, record.description, record.category, record.location?.city, ...record.tags.map(t => t.name)].join(' ');
 }
 export function filtered<T extends SearchUser | Entity>(rows: T[], query: Query): T[] {
-  const tags = query.tag?.split(',').filter(Boolean) ?? [];
+  const tags = parseTagFilter(query.tag ?? '');
   const terms = query.q.toLocaleLowerCase('ru').trim().split(/\s+/).filter(Boolean);
   return rows.filter(row => {
     if (!terms.length) return true;

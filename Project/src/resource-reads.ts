@@ -7,6 +7,7 @@ import { notFound } from './errors.js';
 export function entityCard(entity: Entity) {
   const { id, publicId, type, title, description, status, category, tags, createdAt, location, schedule, goal } = entity;
   return { id, publicId, type, title, description, status, category, tags, createdAt, location, schedule, goal,
+    ...(type === 'challenges' && { teamCount: new Set(entity.participants.flatMap(row => row.team ? [row.team.id] : [])).size }),
     participantCount: entity.participantCount ?? entity.participants.length, readerCount: entity.readerCount ?? entity.readers?.length ?? 0 };
 }
 
@@ -23,7 +24,7 @@ export const entityCardSelect = 'SELECT e.id,e.card FROM klan_entities e';
 
 type Page = Pick<Query, 'page' | 'limit'>;
 const meta = (q: Page, total: number) => ({ page: q.page, limit: q.limit, total, pages: Math.max(1, Math.ceil(total / q.limit)) });
-const publicProfile = "data - ARRAY['historicalImport','communityImport']";
+const publicProfile = "data - ARRAY['historicalImport','communityImport','importProvenance']";
 const visible = (drafts: boolean) => drafts ? 'TRUE' : "card->>'status' IS DISTINCT FROM 'draft'";
 
 async function memberships(db: PoolClient, users: User[], drafts: boolean, cards: boolean) {

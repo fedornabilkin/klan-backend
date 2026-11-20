@@ -5,7 +5,7 @@ import { analyticsState } from './analytics-reads.js';
 import { HttpError, notFound } from './errors.js';
 import { migratedGoal, upgradeChallengeGoal } from './challenge-goals.js';
 import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admins.js';
-import { readProjections } from './read-projections.js';
+import { cardProjection, readProjections } from './read-projections.js';
 import { activeTeamUserIds, entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
 import type { Resource } from './shared/contracts.js';
@@ -145,7 +145,7 @@ export class PostgresRepository implements Repository {
     return this.snapshot(db => readList(db, resource, q, drafts, cards));
   }
   async exportProfile(id: string) {
-    const row = await this.pool.query(`SELECT data - ARRAY['communityImport','historicalImport','access','stats','activeTeams','role','joinedAt','initials','color','publicId']
+    const row = await this.pool.query(`SELECT data - ARRAY['communityImport','historicalImport','importProvenance','access','stats','activeTeams','role','joinedAt','initials','color','publicId']
       AS profile FROM klan_users WHERE id=$1`,[id]);
     if (!row.rowCount) throw notFound();
     return profileWithMemberships(row.rows[0].profile,[],{events:0,books:0,challenges:0});
@@ -229,7 +229,7 @@ export class PostgresRepository implements Repository {
         }
         return fn(state);
       }
-      state.users = (await db.query("SELECT data - ARRAY['historicalImport','communityImport'] AS profile FROM klan_users ORDER BY id")).rows.map(r => r.profile);
+      state.users = (await db.query("SELECT data - ARRAY['historicalImport','communityImport','importProvenance'] AS profile FROM klan_users ORDER BY id")).rows.map(r => r.profile);
       state.activities = (await db.query('SELECT data FROM klan_activities ORDER BY id')).rows.map(r => r.data);
       // Discard daily results for the overview. Fetch complete documents only for the displayed cards.
       state.entities = (await db.query("SELECT data - ARRAY['results','pendingResults','historicalImport','content'] AS entity FROM klan_entities ORDER BY id")).rows.map(r => r.entity);
@@ -276,7 +276,7 @@ export class PostgresRepository implements Repository {
 
   private async sessionRows(keys: string[], at: number, withProfile: boolean) {
     const result = await this.pool.query(`
-      SELECT s.id, s.data->>'expiresAt' AS expires, CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport']
+      SELECT s.id, s.data->>'expiresAt' AS expires, CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport','importProvenance']
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
@@ -374,6 +374,13 @@ export class PostgresRepository implements Repository {
       if (!exclusions.rowCount) {
         await connection.query('CREATE TABLE klan_team_exclusions (id text PRIMARY KEY, data jsonb NOT NULL)');
         await connection.query('INSERT INTO klan_migrations(version) VALUES(4)');
+      }
+      const challengeCards = await connection.query('SELECT version FROM klan_migrations WHERE version=5');
+      if (!challengeCards.rowCount) {
+        await connection.query(cardProjection);
+        // Refresh stored cards created by the earlier version of klan_card.
+        await connection.query("UPDATE klan_entities SET data=data WHERE kind='challenges' AND NOT card ? 'teamCount'");
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(5)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }

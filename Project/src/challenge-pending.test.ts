@@ -54,7 +54,7 @@ test('undated imported values never enter dated totals, community/member analyti
 test('entity hydration updates every result user once per ID and omits private import provenance', () => {
   const { state, user, challenge, teamSnapshot } = fixture();
   const stale = { ...user, name: 'Старое имя', username: 'old_name' };
-  Object.assign(user, { name: 'Новое имя', historicalImport: { privateSource: 'profile' }, communityImport: { telegramId: '12345' } });
+  Object.assign(user, { name: 'Новое имя', facts: ['Бег', 'PCM (из исходного файла): Логик'], importProvenance: { importer: 'pcm-helper' }, historicalImport: { privateSource: 'profile' }, communityImport: { telegramId: '12345' } });
   Object.assign(challenge, { historicalImport: { file: '/private/source.xlsx' } });
   challenge.participants = [{ user: stale, target: 200, team: teamSnapshot }];
   challenge.author = stale;
@@ -73,6 +73,8 @@ test('entity hydration updates every result user once per ID and omits private i
   assert.ok(!('historicalImport' in dto));
   assert.ok(!('historicalImport' in hydrated));
   assert.ok(!('communityImport' in hydrated));
+  assert.ok(!('importProvenance' in hydrated));
+  assert.deepEqual(hydrated.facts.map(fact => typeof fact === 'string' ? fact : fact.text), ['Бег']);
   assert.equal(JSON.stringify(dto).includes('privateSource'), false);
   assert.deepEqual(state, before);
 });
