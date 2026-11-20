@@ -13,6 +13,80 @@ import { accessForLevel } from './access.js';
 import type { CommunityPage, DatabaseState } from './repository.js';
 
 const config: Config = { port: 0, demo: true, production: false, origin: 'http://localhost:5173', telegramGroups: ['-1001'], botInternalSecret: 'app-tests-service-secret-'.repeat(2), adminTelegramIds: [], sessionTtlMs: 60_000, demoUserId: 'user-1', demoAccessLevel: 'admin' };
+test('events keep organizer, seat limit and each attendee’s plans independent', async t => {
+  const seed = createSeed();
+  const member = seed.users[1]!;
+  const token = 'c'.repeat(64);
+  seed.telegramUsers['123456'] = member.id;
+  seed.sessions[hashToken(token)] = { userId: member.id, source: 'telegram', expiresAt: new Date(Date.now() + 60000).toISOString() };
+  const repo = new MemoryRepository(seed);
+  const { app } = createApp(repo, { ...config, telegramGroupMembershipRequired: false });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port + '/api';
+  const send = (method: string, path: string, body?: unknown, cookie = '') => fetch(base + path, {
+    method, headers: { cookie, origin: config.origin, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const login = await send('POST', '/auth/demo', {});
+  const admin = login.headers.getSetCookie()[0]!.split(';')[0]!;
+  const memberSession = 'klan_session=' + token;
+  const event = { title: 'Встреча', description: '', schedule: {
+    start: new Date(Date.now() + 86400000).toISOString(), end: new Date(Date.now() + 90000000).toISOString(),
+  } };
+  const created = await send('POST', '/events', event, admin);
+  assert.equal(created.status, 201);
+  const { data } = await created.json();
+  const path = '/events/' + data.publicId;
+  const patch = (body: unknown) => send('PATCH', path, body, admin);
+  const details = async () => (await (await send('GET', path + '?view=detail', undefined, memberSession)).json()).data;
+  const plans = (body: unknown, cookie = memberSession) => send('PUT', path + '/items', body, cookie);
+  assert.equal(data.author.id, seed.users[0]!.id);
+  assert.ok(data.organizer == null && data.organizerUser == null && data.capacity == null);
+  assert.deepEqual(data.participants, []);
+  assert.equal((await patch({ organizer: { userId: 'missing-user' } })).status, 404);
+  assert.equal((await patch({ organizer: { userId: member.id, name: 'Другое имя' } })).status, 400);
+  assert.equal((await patch({ organizer: { userId: member.id }, capacity: 1 })).status, 200);
+  assert.equal((await patch({ title: 'Открытая встреча' })).status, 200);
+  const view = await details();
+  assert.equal(view.people[view.organizerUser].id, member.id);
+  assert.equal(view.people[view.author].id, seed.users[0]!.id);
+  assert.equal(view.participants.length, 0);
+  assert.equal((await plans({ items: [], comment: 'До записи' })).status, 403);
+  assert.equal((await send('POST', path + '/join', {}, memberSession)).status, 200);
+  assert.equal((await send('POST', path + '/join', {}, admin)).status, 409);
+  const manual = await (await patch({ capacity: null, organizer: { name: '  Городской клуб  ' } })).json();
+  assert.deepEqual(manual.data.organizer, { name: 'Городской клуб' });
+  assert.equal(manual.data.organizerUser, undefined);
+  assert.equal((await send('POST', path + '/join', {}, admin)).status, 200);
+  assert.equal((await patch({ capacity: 1 })).status, 409);
+  assert.equal((await patch({ organizer: null })).status, 200);
+  assert.equal((await details()).organizerUser, undefined);
+  const existing = seed.items[0]!;
+  const note = 'Буду позже\nВозьму <термос>';
+  const result = await plans({ items: [{ id: existing.id, name: existing.name, quantity: 2 }, { name: 'Дождевик Клана' }], comment: note });
+  assert.equal(result.status, 200);
+  const saved = await details();
+  const mine = saved.participants.find((p: {user: number}) => saved.people[p.user].id === member.id);
+  assert.equal(mine.comment, note);
+  assert.equal(mine.items[0].quantity, 2);
+  assert.equal(mine.items[1].quantity, 1);
+  assert.ok(mine.items[1].id);
+  assert.ok(saved.participants.some((p: {user: number; comment?: string}) => saved.people[p.user].id !== member.id && !p.comment));
+  assert.equal((await plans({ items: [{ name: 'Не сохранять' }, { name: 'НЕ  СОХРАНЯТЬ' }], comment: '' })).status, 400);
+  assert.ok(!(await repo.read(s => s.items.some(i => i.name === 'Не сохранять'))));
+  assert.equal((await plans({ items: [], comment: 'я'.repeat(1001) })).status, 400);
+  assert.equal((await plans({ items: [{ name: 'дождевик клана', quantity: 3 }] })).status, 200);
+  const after = await repo.read(s => s.entities.find(e => e.id === data.id)!.participants.find(p => p.user.id === member.id)!);
+  assert.equal(after.comment, note);
+  assert.equal(after.items?.[0]?.id, mine.items[1].id);
+  assert.equal((await plans({ items: [], comment: '' })).status, 200);
+  const cleared = await details();
+  const attendee = cleared.participants.find((p: {user: number}) => cleared.people[p.user].id === member.id);
+  assert.deepEqual(attendee.items, []);
+  assert.equal(attendee.comment, undefined);
+});
+
 test('shared pages coalesce reads, negotiate gzip, invalidate on writes and respect live access', async t => {
   const seed = createSeed();
   const member = seed.users[1]!;

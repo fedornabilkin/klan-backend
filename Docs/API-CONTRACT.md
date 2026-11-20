@@ -18,7 +18,8 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - Team listings default to ascending Russian name order. Compact team details include `participants[].teamRole` (default `member`) and separate lists of ongoing (`activeTeamChallenges`) and finished (`teamChallenges`) challenges the team entered. Each list is newest first. Each summary includes distinct enrolled `members`, `personalTarget`, team `target`, confirmed `score` and `unit`.
 - PUT /teams/:id/members/:userId/role accepts `{role}` (`captain`, `deputy` or `member`). POST /teams/:id/members/:userId/exclude requires `{comment}` (1–1000 characters after trimming). Both require `members.manage`.
 - POST /events|teams|challenges/:id/join {teamId?}; DELETE /events|teams|challenges/:id/join
-- PUT /events/:id/items {items: [{id,name,quantity}]} (own participant)
+- POST /events and PATCH /events/:id accept optional `capacity` (positive integer up to 100000, null for unlimited) and `organizer` (one of {userId}, {name}, or null). PATCH preserves omitted fields. The author is independent of the organizer. Detail responses resolve a member organizer in `organizerUser` (people index for compact detail).
+- PUT /events/:id/items {items: [{id?,name,quantity?}], comment?} updates the signed-in attendee. An item without an ID reuses a matching catalog entry or creates one on save. Up to 50 items, quantities 1–999 (default 1), plain-text comment up to 1000 characters. Omitting the comment keeps it. Sending an empty string clears it.
 - PUT /challenges/:id/results {date:'YYYY-MM-DD',value:number} (own participant, before challenge finish, date within schedule and not future)
 - Counted exercises and visits use whole numbers for new goals and results. Distance and geographic coordinates accept decimals.
 - PUT /books/:id/read {read:boolean}

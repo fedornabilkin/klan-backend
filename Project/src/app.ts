@@ -214,21 +214,36 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     notify('users');
   });
   app.put('/api/events/:id/items', async (req, res) => {
-    const { items } = z.object({ items: z.array(z.object({ id: z.string().min(1), name: z.string().trim().min(1).max(80), quantity: z.number().int().positive().max(999).default(1) }).strict()).max(50) }).strict().parse(req.body);
-    res.json(await mutate(req.user!, 'events', 'обновил снаряжение для мероприятия', state => {
+    const { items, comment } = z.object({
+      items: z.array(z.object({ id: z.string().min(1).optional(), name: z.string().trim().min(1).max(80),
+        quantity: z.number().int().positive().max(999).default(1) }).strict()).max(50),
+      comment: z.string().trim().max(1000).optional(),
+    }).strict().parse(req.body);
+    let catalogChanged = false;
+    const result = await mutate(req.user!, 'events', 'обновил детали своего участия', state => {
       const entity = getEntity(state, 'events', String(req.params.id));
       if (entity.status === 'draft' && !hasCapability(req.user!, 'content.manage')) throw notFound();
       const participant = entity.participants.find(p => p.user.id === req.user!.id);
       if (!participant) throw new HttpError(403, 'JOIN_REQUIRED', 'Сначала запишитесь на мероприятие');
       if (entity.schedule && Date.parse(entity.schedule.end) <= Date.now()) throw new HttpError(409, 'EVENT_FINISHED', 'Мероприятие завершено');
-      if (new Set(items.map(item => item.id)).size !== items.length) throw new HttpError(400, 'DUPLICATE_ITEM', 'Предмет указан несколько раз');
-      participant.items = items.map(item => {
-        const catalogItem = state.items.find(existing => existing.id === item.id);
+      const previousCount = state.items.length;
+      const chosen = items.map(item => {
+        const catalogItem = item.id ? state.items.find(existing => existing.id === item.id)
+          : findOrCreateCatalogEntry(state, 'items', { name: item.name });
         if (!catalogItem) throw new HttpError(400, 'UNKNOWN_ITEM', 'Предмет не найден в справочнике');
         return { ...catalogItem, quantity: item.quantity };
       });
+      if (new Set(chosen.map(item => item.id)).size !== chosen.length) throw new HttpError(400, 'DUPLICATE_ITEM', 'Предмет указан несколько раз');
+      participant.items = chosen;
+      if (comment !== undefined) {
+        if (comment) participant.comment = comment;
+        else delete participant.comment;
+      }
+      catalogChanged = state.items.length !== previousCount;
       return hydrateEntity(state, entity);
-    }, entityTarget));
+    }, entityTarget);
+    if (catalogChanged) notify('items');
+    res.json(result);
   });
   app.put('/api/challenges/:id/results', async (req, res) => res.json(await mutate(req.user!, 'challenges', 'добавил результат в челлендж', state => setResult(state, String(req.params.id), req.user!, req.body), entityTarget)));
   app.put('/api/books/:id/read', async (req, res) => {
@@ -301,6 +316,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
           entity.results = entity.results?.filter(r => r.user.id !== userId);
           entity.readers = entity.readers?.filter(user => user.id !== userId);
           if (entity.author?.id === userId) delete entity.author;
+          if (entity.organizer && 'userId' in entity.organizer && entity.organizer.userId === userId) delete entity.organizer;
         }
         for (const [token, session] of Object.entries(state.sessions)) if (session.userId === userId) delete state.sessions[token];
         for (const [telegramId, linkedUserId] of Object.entries(state.telegramUsers)) if (linkedUserId === userId) delete state.telegramUsers[telegramId];

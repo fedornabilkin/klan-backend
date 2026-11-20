@@ -64,7 +64,8 @@ export const entitySchema = z.object({
   tags: tagsSchema.default([]), location: locationSchema.optional(),
   schedule: z.object({ start: z.iso.datetime({ offset: true }), end: z.iso.datetime({ offset: true }) }).optional(),
   motto: z.string().trim().max(200).optional(), goal: z.object({ target: z.number().positive().max(1e9), unit: shortText, scope: z.literal('participant').optional() }).optional(),
-  capacity: z.number().int().positive().max(100000).optional(),
+  capacity: z.number().int().positive().max(100000).nullish(),
+  organizer: z.union([z.object({ userId: shortText }).strict(), z.object({ name: shortText }).strict()]).nullish(),
 }).strict();
 // PATCH must not apply creation defaults to omitted fields.
 const entityPatchSchema = entitySchema.partial().extend({ status: statusSchema.optional(), category: categorySchema.optional(), tags: tagsSchema.optional() });
@@ -110,7 +111,8 @@ export function hydrateEntity(state: DatabaseState, entity: Entity): Entity {
     return hydrated;
   };
   const { historicalImport: _historicalImport, ...publicEntity } = entity as Entity & { historicalImport?: unknown };
-  return { ...publicEntity, participants: entity.participants.map(p => ({ ...p, user: getUser(p.user), team: p.team ? { id: p.team.id, title: state.entities.find(e => e.id === p.team?.id)?.title ?? p.team.title } : undefined })),
+  const organizer = entity.organizer && 'userId' in entity.organizer ? usersById.get(entity.organizer.userId) : undefined;
+  return { ...publicEntity, organizerUser: organizer && getUser(organizer), participants: entity.participants.map(p => ({ ...p, user: getUser(p.user), team: p.team ? { id: p.team.id, title: state.entities.find(e => e.id === p.team?.id)?.title ?? p.team.title } : undefined })),
     author: entity.author ? getUser(entity.author) : undefined,
     readers: entity.readers?.map(getUser), results: entity.results?.map(result => ({ ...result, user: getUser(result.user) })),
     pendingResults: entity.pendingResults?.map(result => ({ ...result, user: getUser(result.user) })),
@@ -230,6 +232,10 @@ export function updateProfile(state: DatabaseState, id: string, input: unknown, 
   return hydrateUser(state, user);
 }
 function validateEntity(state: DatabaseState, entity: Entity, original?: Entity) {
+  if (entity.organizer) {
+    if (entity.type !== 'events') throw new HttpError(400, 'EVENT_ONLY', 'Организатора можно указать только для мероприятия');
+    if ('userId' in entity.organizer) entity.organizer = { userId: getUser(state, entity.organizer.userId).id };
+  }
   if (entity.type === 'teams' && !['active', 'archived'].includes(entity.status)) throw new HttpError(400, 'INVALID_TEAM_STATUS', 'Для команды допустимы статусы «активна» и «архив»');
   if (entity.type === 'feedback' && !['open', 'in_progress', 'resolved', 'closed'].includes(entity.status)) throw new HttpError(400, 'INVALID_FEEDBACK_STATUS', 'Некорректный статус предложения');
   if (entity.schedule && Date.parse(entity.schedule.end) < Date.parse(entity.schedule.start)) throw new HttpError(400, 'INVALID_SCHEDULE', 'Окончание должно быть после начала');

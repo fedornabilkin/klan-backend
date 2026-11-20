@@ -76,7 +76,8 @@ export function compactDetail(entity: Entity, users: Map<string, User>, teams: M
     return { ...row, user: person(row.user), team: ref.index };
   }
   const { historicalImport: _history, ...data } = entity as Entity & { historicalImport?: unknown };
-  return { ...data, participants: entity.participants.map(entry), readers: entity.readers?.map(person),
+  const organizer = entity.organizer && 'userId' in entity.organizer ? users.get(entity.organizer.userId) : undefined;
+  return { ...data, organizerUser: organizer && person(organizer), participants: entity.participants.map(entry), readers: entity.readers?.map(person),
     author: entity.author && person(entity.author), results: entity.results?.map(entry), pendingResults: entity.pendingResults?.map(entry),
     people: [...people.values()].map(ref => ref.profile), teams: [...teamRefs.values()].map(ref => ref.team) };
 }
@@ -169,6 +170,7 @@ async function hydrateDetails(db: PoolClient, documents: StoredDetail[], drafts:
     }
     for (const reader of entity.readers ?? []) ids.add(reader.id);
     if (entity.author) ids.add(entity.author.id);
+    if (entity.organizer && 'userId' in entity.organizer) ids.add(entity.organizer.userId);
   }
   const allTeams = compact && documents.some(e => e.type === 'challenges');
   const teams = allTeams || teamIds.size ? (await db.query(`SELECT id,card->>'title' AS title,(card->>'publicId')::float8 AS "publicId"
@@ -188,7 +190,9 @@ async function hydrateDetails(db: PoolClient, documents: StoredDetail[], drafts:
   const fallback = (u: User) => byId.get(u.id) ?? hydrateUser(state, u);
   const withUser = <T extends { user: User; team?: { id: string; title: string } }>(p: T) =>
     ({ ...p, user: fallback(p.user), team: p.team && (labels.get(p.team.id) ?? p.team) });
-  return documents.map(entity => ({ ...entity, participants: entity.participants.map(withUser), readers: entity.readers?.map(fallback),
+  return documents.map(entity => ({ ...entity,
+    organizerUser: entity.organizer && 'userId' in entity.organizer ? byId.get(entity.organizer.userId) : undefined,
+    participants: entity.participants.map(withUser), readers: entity.readers?.map(fallback),
     author: entity.author && fallback(entity.author), results: entity.results?.map(withUser), pendingResults: entity.pendingResults?.map(withUser) }));
 }
 
