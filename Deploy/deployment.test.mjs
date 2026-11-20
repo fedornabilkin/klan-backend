@@ -78,6 +78,7 @@ if [[ "$1" == build ]]; then
   if [[ "$*" == *'--build-arg CI_COMPILED=1'* ]]; then
     [[ -s "\${!#}/Project/src/.ci-dist/server.js" && -s "\${!#}/Project/src/.ci-dist/config.js" ]] || exit 95
     printf 'checked-dist\\n' >> "$TEST_LOG"
+    if [[ -s "\${!#}/Project/package-cache.tar.gz" ]]; then printf 'npm-cache\\n' >> "$TEST_LOG"; fi
   fi
   if [[ "$2" == --network ]]; then
     [[ -f "\${!#}/.dockerignore" && ! -e "\${!#}/runtime.env" ]] || exit 96
@@ -201,9 +202,12 @@ test('deploys the JavaScript built by CI with the isolated build network', { ski
   const fixture = harness(context);
   fixture.shared('build-network', 'klan-build\n');
   for (const file of ['config.js', 'server.js']) write(join(fixture.incoming, 'compiled', file), 'export {};\n');
+  write(join(fixture.incoming, 'package-cache.tar.gz'), 'synthetic cache');
   const result = fixture.deploy();
   assert.equal(result.status, 0, result.stderr);
   assert.ok(fixture.log().includes('checked-dist'));
+  assert.ok(fixture.log().includes('npm-cache'));
+  assert.equal(existsSync(join(fixture.incoming, 'package-cache.tar.gz')), false);
 });
 
 for (const [setting, value, expected] of [

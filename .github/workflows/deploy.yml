@@ -38,6 +38,9 @@ jobs:
           npm run build
           npm run typecheck:tools
           npm run test:tools
+      - name: Подготовить npm-пакеты для сервера
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: node Deploy/package-npm-cache.mjs Project/package-lock.json "$HOME/.npm" Project/dist/package-cache.tar.gz
       - name: Сохранить скомпилированный API для VPS
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
@@ -47,6 +50,22 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 7
+
+  deployment-checks:
+    name: Проверки выкладки
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Project/package-lock.json
+      - run: npm ci
+        working-directory: Project
       - name: Проверить скрипты выкладки
         run: |
           for script in Deploy/*.sh; do bash -n "$script"; done
@@ -60,7 +79,7 @@ jobs:
 
   deploy:
     name: Продакшен
-    needs: checks
+    needs: [checks, deployment-checks]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 40

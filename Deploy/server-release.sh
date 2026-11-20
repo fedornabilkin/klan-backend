@@ -30,6 +30,7 @@ elif [[ -e "$deploy_root/current" ]]; then
 fi
 release_dir=''
 scratch=''
+cache_archive=''
 changed=0
 finished=0
 api_compose_args=()
@@ -99,9 +100,10 @@ cleanup() {
       printf 'Could not stop the failed service; automatic rollback was not started.\n' >&2
     fi
   fi
+  [[ -z "$cache_archive" ]] || rm -f -- "$cache_archive"
   [[ -z "$scratch" ]] || rm -rf -- "$scratch"
   if [[ "$operation" == deploy && "$(dirname -- "$request_dir")" == "$deploy_root/incoming" ]]; then
-    rm -f -- "$request_dir/runtime.env"
+    rm -f -- "$request_dir/runtime.env" "$request_dir/package-cache.tar.gz"
   fi
   exit "$result"
 }
@@ -185,6 +187,11 @@ ASKPASS
       [[ -d "$compiled" && ! -L "$compiled" && -s "$compiled/server.js" && -s "$compiled/config.js" ]] || fail 'Invalid compiled API'
       [[ -z "$(find "$compiled" ! -type d ! \( -type f \( -name '*.js' -o -name '*.js.map' \) \) -print -quit)" ]] || fail 'Unexpected compiled file'
       cp -R -- "$compiled" "$build_context/Project/src/.ci-dist"
+      if [[ -e "$request_dir/package-cache.tar.gz" ]]; then
+        [[ -f "$request_dir/package-cache.tar.gz" && ! -L "$request_dir/package-cache.tar.gz" ]] || fail 'Invalid npm cache archive'
+        cache_archive="$build_context/Project/package-cache.tar.gz"
+        mv -- "$request_dir/package-cache.tar.gz" "$cache_archive"
+      fi
       build_command+=(--build-arg CI_COMPILED=1)
     fi
     "${build_command[@]}" --file "$build_context/Docker/Dockerfile" --tag "$IMAGE_REF" \

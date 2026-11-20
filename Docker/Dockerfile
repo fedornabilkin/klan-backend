@@ -1,9 +1,10 @@
 FROM node:24-bookworm-slim AS build
 LABEL io.klan.backend.build-stage=true
 WORKDIR /app
-COPY Project/package.json Project/package-lock.json ./
+# The optional CI tarball expands to /app/_cacache for npm's integrity-checked reads.
+ADD Project/package* ./
 ARG CI_COMPILED=0
-RUN if [ "$CI_COMPILED" = 1 ]; then npm ci --omit=dev --no-audit --no-fund; else npm ci; fi
+RUN if [ "$CI_COMPILED" = 1 ]; then npm ci --omit=dev --prefer-offline --cache=/app --no-audit --no-fund; else npm ci; fi
 COPY Project/tsconfig.json ./
 COPY Project/src ./src
 RUN if [ "$CI_COMPILED" = 1 ]; then mv src/.ci-dist dist; else npm run build && npm prune --omit=dev; fi

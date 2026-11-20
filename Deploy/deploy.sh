@@ -26,6 +26,9 @@ mkdir -p "$scratch/payload/Deploy"
 if [[ -n "${CHECKED_DIST:-}" ]]; then
   [[ -s "$CHECKED_DIST/server.js" && -s "$CHECKED_DIST/config.js" ]] || fail 'Incomplete compiled API'
   cp -R -- "$CHECKED_DIST" "$scratch/payload/compiled"
+  if [[ -f "$scratch/payload/compiled/package-cache.tar.gz" ]]; then
+    mv -- "$scratch/payload/compiled/package-cache.tar.gz" "$scratch/payload/"
+  fi
 fi
 printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$scratch/key"
 printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$scratch/known_hosts"
@@ -39,10 +42,8 @@ chmod 600 "$scratch/key" "$scratch/known_hosts"
 ssh_options=(-F /dev/null -i "$scratch/key" -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o IdentityAgent=none
   -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4
   -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$scratch/known_hosts" -o GlobalKnownHostsFile=/dev/null)
-ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-  "test \"\$(realpath '$deploy_root')\" = '$deploy_root' && test -w '$deploy_root/incoming' && test -w '$deploy_root/releases' && umask 077 && mkdir '$remote' && test \"\$(realpath '$remote')\" = '$remote'"
 tar -C "$scratch/payload" -czf - . | ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-  "umask 077; tar -xzf - -C '$remote'"
+  "umask 077 && test \"\$(realpath '$deploy_root')\" = '$deploy_root' && test -w '$deploy_root/incoming' && test -w '$deploy_root/releases' && mkdir '$remote' && test \"\$(realpath '$remote')\" = '$remote' && tar -xzf - -C '$remote'"
 # The repository-scoped token goes through stdin, never an SSH argument or Git URL.
 printf '%s\n' "$GIT_TOKEN" | ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
   "bash '$remote/Deploy/server-release.sh' deploy"

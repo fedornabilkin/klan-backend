@@ -2,6 +2,7 @@
 !Project/
 !Project/package.json
 !Project/package-lock.json
+!Project/package-cache.tar.gz
 !Project/tsconfig.json
 !Project/src/
 !Project/src/**

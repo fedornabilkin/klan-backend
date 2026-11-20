@@ -24,6 +24,9 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 20s
+    healthcheck:
+      start_period: 30s
+      start_interval: 2s
     env_file:
       - path: ../runtime.env
         format: raw
