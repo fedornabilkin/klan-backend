@@ -17,6 +17,7 @@ import type { Statistics } from './shared/contracts.js';
 
 export interface DatabaseState {
   users: User[]; entities: Entity[]; tags: Tag[]; items: Item[]; activities: Activity[];
+  teamExclusions: { id: string; teamId: string; userId: string; adminId: string; comment: string; createdAt: string }[];
   telegramUsers: Record<string, string>;
   managedAdmins: Record<string,string>;
   userPublicIds: Record<string, number>;
@@ -48,7 +49,7 @@ export interface Repository {
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
 type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
-  return { users: [], entities: [], tags: [], items: [], activities: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
+  return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
 
 /** A serialized unit of work. Failed callbacks never publish their mutations. */
@@ -57,7 +58,7 @@ export class MemoryRepository implements Repository {
   protected state: DatabaseState;
   private queue: Promise<unknown> = Promise.resolve();
   constructor(initial: DatabaseState = emptyState(), private file?: string) {
-    this.state = { ...structuredClone(initial), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+    this.state = { ...structuredClone(initial), teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
   }
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS klan_items (id text PRIMARY KEY, data jsonb NOT NULL)
 CREATE TABLE IF NOT EXISTS klan_activities (id text PRIMARY KEY, data jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(kind,id));
 `;
-const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities' } as const;
+const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities', teamExclusions: 'klan_team_exclusions' } as const;
 const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins'] as const;
 
 // Keep the original JSON for delta detection without cloning a second graph of profiles and results.
@@ -368,6 +369,11 @@ export class PostgresRepository implements Repository {
           await connection.query("UPDATE klan_entities SET data=jsonb_set(data,'{goal}',$2::jsonb) WHERE id=$1",[row.id,goal]);
         }
         await connection.query('INSERT INTO klan_migrations(version) VALUES(3)');
+      }
+      const exclusions = await connection.query('SELECT version FROM klan_migrations WHERE version=4');
+      if (!exclusions.rowCount) {
+        await connection.query('CREATE TABLE klan_team_exclusions (id text PRIMARY KEY, data jsonb NOT NULL)');
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(4)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }

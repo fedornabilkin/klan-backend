@@ -7,7 +7,7 @@ const compress = promisify(gzip);
 const brotli = promisify(brotliCompress);
 type Body = { json: string; gzip?: Promise<Buffer>; br?: Promise<Buffer> };
 type Entry = { expires: number; body: Promise<Body>; id?: string };
-type PageKey = 'tags' | 'tag-usage' | 'items' | 'geography' | `${'stats' | 'dashboard' | 'dashboard-cards' | 'challenge'}-${'all' | 'published'}`;
+type PageKey = 'tags' | 'tag-usage' | 'items' | 'geography' | `${'stats' | 'dashboard' | 'dashboard-cards' | 'challenge' | 'team'}-${'all' | 'published'}`;
 
 /** Called after authentication. Only the fixed, shared views can occupy cache slots. */
 export function pageResponses(repo: Repository) {

@@ -10,7 +10,8 @@ import type { Activity, Entity, Resource, User, UserIdentity } from './shared/co
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, Repository } from './repository.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
-import { compactDetail, entityCard, userCard } from './resource-reads.js';
+import { compactDetail, entityCard, teamChallengeHistory, userCard } from './resource-reads.js';
+import { excludeTeamMember, setTeamRole } from './team-members.js';
 import { activeTeamMembers, publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
 import { userPath } from './shared/user-links.js';
@@ -85,7 +86,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     notify(collection, outcome.draft ? undefined : outcome.activity);
     return { data: outcome.data };
   };
-  const entityTarget = (entity: Entity) => ({ title: entity.title, path: `/${entity.type}/${entity.id}` });
+  const entityTarget = (entity: Pick<Entity, 'title' | 'type' | 'id'>) => ({ title: entity.title, path: `/${entity.type}/${entity.id}` });
 
   const sendPage = pageResponses(repo);
   const readPage = <T>(page: CommunityPage, fn: (state: DatabaseState) => T, at = new Date()) =>
@@ -190,6 +191,18 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
         state.activities.map(a => a.createdAt.slice(0, 10)));
     }));
   });
+  app.put('/api/teams/:id/members/:userId/role', async (req, res) => {
+    requireCapability(req.user!, 'members.manage');
+    res.json(await mutate(req.user!, 'teams', 'изменил роль участника команды', state =>
+      setTeamRole(state, String(req.params.id), String(req.params.userId), req.body, req.user!), entityTarget));
+  });
+  app.post('/api/teams/:id/members/:userId/exclude', async (req, res) => {
+    requireCapability(req.user!, 'members.manage');
+    const result = await mutate(req.user!, 'teams', 'исключил участника из команды', state =>
+      excludeTeamMember(state, String(req.params.id), String(req.params.userId), req.body, req.user!), entityTarget);
+    broadcast({ type: 'invalidate', resource: 'users' });
+    res.json(result);
+  });
   app.post('/api/:resource/:id/join', async (req, res) => {
     const collection = resource(req);
     res.json(await mutate(req.user!, collection, collection === 'teams' ? 'присоединился к команде' : collection === 'challenges' ? 'принял участие в челлендже' : 'записался на мероприятие', state => joinEntity(state, collection, String(req.params.id), req.user!, req.body), entityTarget));
@@ -231,7 +244,10 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   });
   app.get('/api/:resource', async (req, res) => {
     const collection = resource(req), params = query(req), cards = req.query.view === 'cards';
-    if (collection === 'teams' && req.query.limit === undefined) params.limit = 30;
+    if (collection === 'teams') {
+      if (req.query.limit === undefined) params.limit = 30;
+      if (req.query.sort === undefined) params.sort = 'name';
+    }
     if (repo.list) return res.json(await repo.list(collection, params, hasCapability(req.user, 'content.manage'), cards));
     res.json(await repo.read(raw => {
       const state = visibleState(raw,req.user!);
@@ -248,7 +264,8 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     const collection = resource(req), compact = req.query.view === 'detail';
     const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
     const drafts = hasCapability(req.user, 'content.manage');
-    const cacheKey = collection === 'challenges' && compact ? (drafts ? 'challenge-all' : 'challenge-published') : undefined;
+    const cacheKey = compact && (collection === 'teams' || collection === 'challenges')
+      ? `${collection === 'teams' ? 'team' : 'challenge'}-${drafts ? 'all' : 'published'}` as const : undefined;
     await sendPage(req, res, cacheKey, () => repo.detail ? repo.detail(collection,id,drafts,compact) : repo.read(raw => {
       const state = visibleState(raw,req.user!);
       if (collection === 'users') return hydrateUser(state,getUser(state,id));
@@ -256,6 +273,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       if (!compact) return hydrateEntity(state,entity);
       const members = activeTeamMembers(state.entities);
       const users = new Map(state.users.map(user => [user.id,{...user,hasActiveTeam:members.has(user.id)}]));
+      if (collection === 'teams') entity.teamChallenges = teamChallengeHistory(state.entities, entity.id);
       return compactDetail(entity,users,new Map(state.entities.filter(t => t.type === 'teams')
         .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}])));
     }), id);

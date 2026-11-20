@@ -1,12 +1,19 @@
 \set ON_ERROR_STOP on
 \set VERBOSITY terse
 -- psql reads and writes COPY text directly, preserving UTF-8 and JSON escaping.
+SELECT to_regclass('public.klan_team_exclusions') IS NOT NULL AS has_exclusions \gset
+\if :has_exclusions
+CREATE TEMP VIEW reviewed_exclusions AS SELECT to_jsonb(t) AS body FROM public.klan_team_exclusions t;
+\else
+CREATE TEMP VIEW reviewed_exclusions AS SELECT NULL::jsonb AS body WHERE false;
+\endif
 CREATE TEMP VIEW reviewed_rows (relation, body) AS
   SELECT 'klan_users', to_jsonb(t) FROM public.klan_users t
   UNION ALL SELECT 'klan_entities', jsonb_build_object('id',t.id,'kind',t.kind,'data',t.data) FROM public.klan_entities t
   UNION ALL SELECT 'klan_tags', to_jsonb(t) FROM public.klan_tags t
   UNION ALL SELECT 'klan_items', to_jsonb(t) FROM public.klan_items t
   UNION ALL SELECT 'klan_activities', to_jsonb(t) FROM public.klan_activities t
+  UNION ALL SELECT 'klan_team_exclusions', body FROM reviewed_exclusions
   UNION ALL SELECT 'klan_migrations', to_jsonb(t) FROM public.klan_migrations t
   UNION ALL SELECT 'klan_auth', to_jsonb(t) FROM public.klan_auth t
     WHERE kind NOT IN ('sessions', 'authRequests', 'managedAdmins');
@@ -22,8 +29,10 @@ SET LOCAL DateStyle = 'ISO, YMD';
 DO $$
 BEGIN
   IF (SELECT array_agg(tablename::text ORDER BY tablename) FROM pg_tables WHERE schemaname = 'public')
-     IS DISTINCT FROM ARRAY['klan_activities','klan_auth','klan_entities','klan_items','klan_migrations','klan_tags','klan_users']
-     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3]), false) THEN
+     IS DISTINCT FROM (CASE WHEN EXISTS (SELECT FROM public.klan_migrations WHERE version=4)
+       THEN ARRAY['klan_activities','klan_auth','klan_entities','klan_items','klan_migrations','klan_tags','klan_team_exclusions','klan_users']
+       ELSE ARRAY['klan_activities','klan_auth','klan_entities','klan_items','klan_migrations','klan_tags','klan_users'] END)
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3],ARRAY[1,2,3,4]), false) THEN
     RAISE EXCEPTION 'Unexpected Klan schema or migration version';
   END IF;
 END $$;
@@ -49,6 +58,11 @@ BEGIN
   CREATE TEMP TABLE saved_admin_bindings ON COMMIT DROP AS SELECT * FROM public.klan_auth WHERE kind='managedAdmins';
   TRUNCATE public.klan_users, public.klan_entities, public.klan_tags, public.klan_items,
            public.klan_activities, public.klan_migrations, public.klan_auth;
+  IF to_regclass('public.klan_team_exclusions') IS NOT NULL THEN
+    TRUNCATE public.klan_team_exclusions;
+    INSERT INTO public.klan_team_exclusions(id,data)
+      SELECT body->>'id',body->'data' FROM reviewed_input WHERE relation='klan_team_exclusions';
+  END IF;
   FOREACH target IN ARRAY ARRAY['klan_users','klan_entities','klan_tags','klan_items','klan_activities','klan_migrations','klan_auth']
   LOOP
     IF target='klan_entities' THEN
@@ -75,7 +89,7 @@ BEGIN
      OR (SELECT count(*) FROM public.klan_entities WHERE kind='challenges') <> 1
      OR NOT EXISTS (SELECT FROM public.klan_entities WHERE kind='challenges' AND id='history-challenge-f24c7cb336799a547084efb9')
      OR (SELECT count(*) FROM public.klan_auth WHERE kind='telegramUsers') <> 451
-     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3]), false) THEN
+     OR NOT coalesce((SELECT array_agg(version ORDER BY version) FROM public.klan_migrations) IN (ARRAY[1],ARRAY[1,2],ARRAY[1,2,3],ARRAY[1,2,3,4]), false) THEN
     RAISE EXCEPTION 'Data does not match the reviewed October dataset';
   END IF;
 END $$;

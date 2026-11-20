@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { Activity, Entity, Resource, User } from './shared/contracts.js';
+import type { Activity, Entity, Resource, TeamChallengeSummary, User } from './shared/contracts.js';
 import { filtered, hydrateUser, paginate, type Query } from './domain.js';
 import { emptyState } from './repository.js';
 import { notFound } from './errors.js';
@@ -80,6 +80,47 @@ export function compactDetail(entity: Entity, users: Map<string, User>, teams: M
     people: [...people.values()].map(ref => ref.profile), teams: [...teamRefs.values()].map(ref => ref.team) };
 }
 
+export function teamChallengeHistory(entities: Entity[], teamId: string, now = new Date()): TeamChallengeSummary[] {
+  const history: { summary: TeamChallengeSummary; date: string }[] = [];
+  for (const challenge of entities) {
+    if (challenge.type !== 'challenges' || challenge.status === 'draft') continue;
+    const end = challenge.schedule?.end;
+    if (!['completed', 'archived'].includes(challenge.status) && !(end && Date.parse(end) <= now.getTime())) continue;
+    const registered = new Set<string>();
+    let members = 0;
+    for (const { user, team } of challenge.participants) {
+      if (registered.has(user.id)) continue;
+      registered.add(user.id);
+      if (team?.id === teamId) members++;
+    }
+    const results = challenge.results?.filter(row => row.team?.id === teamId) ?? [];
+    if (!members && !results.length) continue;
+    history.push({ date: end || challenge.createdAt, summary: { id: challenge.id, publicId: challenge.publicId, title: challenge.title,
+      score: results.reduce((sum, row) => sum + row.value, 0), target: challenge.goal ? challenge.goal.target * members : null,
+      unit: challenge.goal?.unit ?? 'ед.' } });
+  }
+  return history.sort((a,b) => Date.parse(b.date) - Date.parse(a.date) || a.summary.id.localeCompare(b.summary.id)).map(row => row.summary);
+}
+
+async function readTeamChallenges(db: PoolClient, teamId: string): Promise<TeamChallengeSummary[]> {
+  const result = await db.query<TeamChallengeSummary>(`SELECT e.id, (e.card->>'publicId')::float8 AS "publicId",
+    e.card->>'title' AS title, COALESCE(scores.total, 0) AS score,
+    (e.card#>>'{goal,target}')::float8 * roster.members AS target, COALESCE(e.card#>>'{goal,unit}', 'ед.') AS unit
+    FROM klan_entities e
+    CROSS JOIN LATERAL (SELECT count(*) FILTER (WHERE registered.team=$1) AS members FROM (
+      SELECT DISTINCT ON (p#>>'{user,id}') p#>>'{team,id}' AS team
+      FROM jsonb_array_elements(e.detail->'participants') WITH ORDINALITY entries(p, ord)
+      ORDER BY p#>>'{user,id}', ord
+    ) registered) roster
+    CROSS JOIN LATERAL (SELECT sum((r->>'value')::float8) AS total FROM jsonb_array_elements(nullif(e.detail->'results','null')) r
+      WHERE r#>>'{team,id}'=$1) scores
+    WHERE e.kind='challenges' AND e.card->>'status'<>'draft'
+      AND (e.card->>'status' IN ('completed','archived') OR (e.card#>>'{schedule,end}')::timestamptz <= now())
+      AND (roster.members > 0 OR scores.total IS NOT NULL)
+    ORDER BY coalesce(e.card#>>'{schedule,end}', e.card->>'createdAt')::timestamptz DESC, e.id`, [teamId]);
+  return result.rows;
+}
+
 export async function readDetail(db: PoolClient, resource: Resource, id: string, drafts: boolean, compact: boolean) {
   if (resource === 'users') {
     const row = await db.query(`SELECT ${publicProfile} AS profile FROM klan_users WHERE id=$1 OR data->>'publicId'=$1`, [id]);
@@ -94,6 +135,7 @@ export async function readDetail(db: PoolClient, resource: Resource, id: string,
     (id=$1 OR card->>'publicId'=$1) AND ${visible(drafts)}`, [id, resource]);
   if (!row.rowCount) throw notFound();
   const document = row.rows[0].entity;
+  if (resource === 'teams' && compact) document.teamChallenges = await readTeamChallenges(db, document.id);
   if (compact) document.snapshots = row.rows[0].snapshots;
   return (await hydrateDetails(db,[document],drafts,compact))[0];
 }
