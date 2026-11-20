@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -47,7 +47,7 @@ function harness(context, contents = runtime()) {
   const temporary = mkdtempSync(join(tmpdir(), 'klan-backend-hooks-test-'));
   context.after(() => rmSync(temporary, { recursive: true, force: true }));
   const root = join(temporary, 'backend');
-  const release = join(root, 'releases', 'synthetic-release');
+  const release = join(root, 'releases', `${'a'.repeat(40)}-10-1`);
   const bin = join(temporary, 'bin');
   const log = join(temporary, 'calls.log');
   const runner = join(temporary, 'run.sh');
@@ -93,6 +93,7 @@ compose() {
     run) node "$TEST_COMPOSE_NODE" "$@" ;;
     up) return 0 ;;
     exec)
+      if [[ "$*" == *'pg_restore --list' ]]; then return 0; fi
       if [[ "$FAIL_BACKUP" == yes ]]; then printf 'partial'; return 1; fi
       printf 'synthetic-pg-dump'
       ;;
@@ -202,13 +203,36 @@ test('a successful backup is retained before the API is replaced', { skip: unava
   const result = fixture.run('service_start');
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   const lines = fixture.lines();
-  assert.equal(lines.length, 3);
+  assert.equal(lines.length, 4);
   assert.equal(lines[0], 'up -d --no-build --wait --wait-timeout 180 db');
   assert.match(lines[1], /^exec -T db sh -c pg_dump/);
-  assert.equal(lines[2], 'up -d --no-build --wait --wait-timeout 180 api');
+  assert.equal(lines[2], 'exec -T db pg_restore --list');
+  assert.equal(lines[3], 'up -d --no-build --wait --wait-timeout 180 api');
   const backups = readdirSync(join(fixture.root, 'backups'));
   assert.equal(backups.length, 1);
   assert.equal(readFileSync(join(fixture.root, 'backups', backups[0]), 'utf8'), 'synthetic-pg-dump');
+});
+
+test('retention keeps seven completed releases and reviewed imports together and ignores unrelated files', { skip: unavailable }, context => {
+  const fixture = harness(context);
+  const directory = join(fixture.root, 'backups');
+  const names = Array.from({ length: 9 }, (_, i) => i % 2
+    ? `before-reviewed-2026010${i}T000000Z-abcdefgh.dump`
+    : `${'b'.repeat(40)}-${i}-1-abc123.dump`);
+  const unrelated = ['manual.dump', '.partial', 'reviewed-hash.applied'];
+  for (const [i, name] of [...names, ...unrelated].entries()) {
+    const path = join(directory, name);
+    write(path, 'existing');
+    utimesSync(path, 1700000000 + i, 1700000000 + i);
+  }
+  const failed = fixture.run('service_prepare_data', { FAIL_BACKUP: 'yes' });
+  assert.notEqual(failed.status, 0);
+  assert.deepEqual(readdirSync(directory).sort(), [...names, ...unrelated].sort());
+  const success = fixture.run('service_prepare_data');
+  assert.equal(success.status, 0, success.stderr);
+  const retained = readdirSync(directory);
+  assert.equal(retained.length, 7 + unrelated.length);
+  assert.ok([...names.slice(3), ...unrelated].every(name => retained.includes(name)));
 });
 
 test('stopping a failed API preserves the database container and persistent volume', { skip: unavailable }, (context) => {

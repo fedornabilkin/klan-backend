@@ -28,20 +28,26 @@ service_preflight() {
     } catch { console.error("Invalid production configuration or mismatched database credentials"); process.exit(1); }
   ' || return
 }
-service_prepare_data() {
+service_prepare_data() (
   compose up -d --no-build --wait --wait-timeout 180 db || return
   # A snapshot precedes migrations on every deployment, including manual rollback.
-  mkdir -p "$deploy_root/backups" || return
-  local backup
-  backup="$(mktemp "$deploy_root/backups/$(basename -- "$release_dir")-XXXXXX.dump")" || return
+  local directory="$deploy_root/backups" partial backup
+  [[ ! -L "$directory" ]] || return 1
+  mkdir -p "$directory" || return
+  partial="$(mktemp "$directory/.$(basename -- "$release_dir")-XXXXXX.partial")" || return
+  trap 'rm -f -- "$partial"' EXIT
+  backup=${partial##*/.}
+  backup=${backup%.partial}.dump
   # Variables must expand inside the database container, never on the host.
   # shellcheck disable=SC2016
-  if ! compose exec -T db sh -c 'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$backup"; then
-    rm -f -- "$backup"
+  if ! compose exec -T db sh -c 'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$partial" ||
+     [[ ! -s "$partial" ]] || ! compose exec -T db pg_restore --list < "$partial" > /dev/null; then
     printf 'Database backup failed; API was not updated.\n' >&2
     return 1
   fi
-}
+  mv -T -- "$partial" "$directory/$backup" || return
+  bash "$(dirname -- "${BASH_SOURCE[0]}")/rotate-backups.sh" "$directory" "$backup"
+)
 service_start() {
   compose up -d --no-build --wait --wait-timeout 180 api || return
 }

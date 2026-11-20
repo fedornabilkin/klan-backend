@@ -238,14 +238,15 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.get('/api/:resource/:id', async (req, res) => {
     const collection = resource(req), compact = req.query.view === 'detail';
     const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
-    const data = repo.detail ? await repo.detail(collection,id,hasCapability(req.user,'content.manage'),compact) : await repo.read(raw => {
+    const drafts = hasCapability(req.user, 'content.manage');
+    const cacheKey = collection === 'challenges' && compact ? (drafts ? 'challenge-all' : 'challenge-published') : undefined;
+    await sendPage(req, res, cacheKey, () => repo.detail ? repo.detail(collection,id,drafts,compact) : repo.read(raw => {
       const state = visibleState(raw,req.user!);
       if (collection === 'users') return hydrateUser(state,getUser(state,id));
       const entity = getEntity(state,collection,id);
       return compact ? compactDetail(entity,new Map(state.users.map(u => [u.id,u])),new Map(state.entities.filter(t => t.type === 'teams')
         .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}]))) : hydrateEntity(state,entity);
-    });
-    res.json({data});
+    }), id);
   });
   app.post('/api/:resource', async (req, res) => {
     const collection = resource(req);

@@ -1,4 +1,5 @@
 FROM node:24-bookworm-slim AS build
+LABEL io.klan.backend.build-stage=true
 WORKDIR /app
 COPY Project/package.json Project/package-lock.json ./
 ARG CI_COMPILED=0

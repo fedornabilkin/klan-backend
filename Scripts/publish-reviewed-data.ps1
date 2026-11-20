@@ -27,6 +27,7 @@ $ctl = Join-Path $config.binDir 'pg_ctl.exe'
 $deploy = Join-Path $root 'Deploy'
 $sql = Join-Path $deploy 'reviewed-data.sql'
 $worker = Join-Path $deploy 'apply-reviewed-data.sh'
+$rotation = Join-Path $deploy 'rotate-backups.sh'
 $temp = [IO.Directory]::CreateDirectory((Join-Path ([IO.Path]::GetTempPath()) ('klan-reviewed-' + [guid]::NewGuid().ToString('N')))).FullName
 $copy = Join-Path $temp 'reviewed.copy'
 $previousPassword = $env:PGPASSWORD
@@ -56,10 +57,10 @@ try {
     $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $copy).Hash.ToLowerInvariant()
     $job = & ssh.exe @options $target 'umask 077 && mktemp -d /opt/klan/backend/.reviewed.XXXXXXXX'
     if ($LASTEXITCODE -ne 0 -or $job -cnotmatch '^/opt/klan/backend/\.reviewed\.[a-zA-Z0-9]{8}$') { throw 'Could not create a private upload directory.' }
-    $removeUpload = "rm -f -- $job/reviewed.copy $job/reviewed-data.sql $job/apply-reviewed-data.sh && rmdir -- $job"
+    $removeUpload = "rm -f -- $job/reviewed.copy $job/reviewed-data.sql $job/apply-reviewed-data.sh $job/rotate-backups.sh && rmdir -- $job"
     $dispatched = $false
     try {
-        & scp.exe @options $copy $sql $worker "${target}:$job/"
+        & scp.exe @options $copy $sql $worker $rotation "${target}:$job/"
         if ($LASTEXITCODE -ne 0) { throw 'Upload failed before import.' }
         # The remote shell owns cleanup from here, including if the client loses its connection.
         $dispatched = $true

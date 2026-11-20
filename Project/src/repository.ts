@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import pg from 'pg';
 import { analyticsState } from './analytics-reads.js';
-import { notFound } from './errors.js';
+import { HttpError, notFound } from './errors.js';
 import { migratedGoal, upgradeChallengeGoal } from './challenge-goals.js';
 import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admins.js';
 import { readProjections } from './read-projections.js';
@@ -102,10 +102,22 @@ CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data
 const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities' } as const;
 const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins'] as const;
 
+// Keep the original JSON for delta detection without cloning a second graph of profiles and results.
+function originalRows(state: DatabaseState) {
+  const rows = new Map<string, Map<string, string>>();
+  for (const key of Object.keys(tables) as (keyof typeof tables)[])
+    rows.set(key, new Map(state[key].map(row => [row.id, JSON.stringify(row)])));
+  for (const key of authKeys)
+    rows.set(key, new Map(Object.entries(state[key]).map(([id, value]) => [id, JSON.stringify(value)])));
+  return rows;
+}
+
 /** PostgreSQL adapter. Advisory transaction lock protects cross-entity invariants across API instances. */
 export class PostgresRepository implements Repository {
   revision = 0;
   private pool: pg.Pool;
+  private writes: Promise<void> = Promise.resolve();
+  private pendingWrites = 0;
   constructor(connectionString: string) {
     this.pool = new pg.Pool({ connectionString, max: 4, connectionTimeoutMillis: 5000, query_timeout: 10000 });
     this.pool.on('error', error => {
@@ -216,8 +228,39 @@ export class PostgresRepository implements Repository {
     });
   }
   async readSession(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined> {
+    if (withProfile) return (await this.sessionRows([key], at, true)).get(key)?.principal;
+    // Share a database round trip, never an authorization decision from a previous request.
+    return new Promise((resolve, reject) => {
+      const batch = this.sessionBatch;
+      batch.push({ key, at, resolve, reject });
+      if (batch.length === 1) setImmediate(() => { void this.flushSessions(batch); });
+      if (batch.length === 128) this.sessionBatch = [];
+    });
+  }
+
+  private sessionBatch: {
+    key: string; at: number;
+    resolve: (value: SessionPrincipal | undefined) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+
+  private async flushSessions(batch: typeof this.sessionBatch) {
+    if (this.sessionBatch === batch) this.sessionBatch = [];
+    try {
+      const keys = [...new Set(batch.map(request => request.key))];
+      const rows = await this.sessionRows(keys, Math.min(...batch.map(request => request.at)), false);
+      for (const request of batch) {
+        const row = rows.get(request.key);
+        request.resolve(row && row.expiresAt > request.at ? row.principal : undefined);
+      }
+    } catch (error) {
+      for (const request of batch) request.reject(error);
+    }
+  }
+
+  private async sessionRows(keys: string[], at: number, withProfile: boolean) {
     const result = await this.pool.query(`
-      SELECT CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport']
+      SELECT s.id, s.data->>'expiresAt' AS expires, CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport']
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
@@ -232,22 +275,26 @@ export class PostgresRepository implements Repository {
             OR (e.kind = 'books' AND e.data @> jsonb_build_object('readers', jsonb_build_array(jsonb_build_object('id', u.id))))
         ) END AS memberships
       FROM klan_auth s JOIN klan_users u ON u.id = s.data->>'userId'
-      WHERE s.kind = 'sessions' AND s.id = $1 AND (s.data->>'expiresAt')::timestamptz > $2::timestamptz`,
-      [key, new Date(at).toISOString(), withProfile]);
-    const row = result.rows[0];
-    if (!row) return undefined;
-    let user: User = row.profile;
-    if (withProfile) {
-      const memberships: { kind: keyof User['stats'] | 'teams'; team?: NonNullable<User['activeTeams']>[number] }[] = row.memberships ?? [];
-      const stats = { events: 0, challenges: 0, books: 0 };
-      const teams: NonNullable<User['activeTeams']> = [];
-      for (const entry of memberships) {
-        if (entry.kind === 'teams') { if (entry.team) teams.push(entry.team); }
-        else stats[entry.kind]++;
+      WHERE s.kind = 'sessions' AND s.id = ANY($1::text[]) AND (s.data->>'expiresAt')::timestamptz > $2::timestamptz`,
+      [keys, new Date(at).toISOString(), withProfile]);
+    const rows = new Map<string, { expiresAt: number; principal: SessionPrincipal }>();
+    for (const row of result.rows) {
+      let user: User = row.profile;
+      if (withProfile) {
+        const memberships: { kind: keyof User['stats'] | 'teams'; team?: NonNullable<User['activeTeams']>[number] }[] = row.memberships ?? [];
+        const stats = { events: 0, challenges: 0, books: 0 };
+        const teams: NonNullable<User['activeTeams']> = [];
+        for (const entry of memberships) {
+          if (entry.kind === 'teams') { if (entry.team) teams.push(entry.team); }
+          else stats[entry.kind]++;
+        }
+        user = profileWithMemberships(user, teams, stats);
       }
-      user = profileWithMemberships(user, teams, stats);
+      rows.set(row.id, { expiresAt: Date.parse(row.expires), principal: {
+        user, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
+      } });
     }
-    return { user, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined };
+    return rows;
   }
   async authRequest(id: string): Promise<DatabaseState['authRequests'][string] | undefined> {
     const result = await this.pool.query("SELECT data FROM klan_auth WHERE kind = 'authRequests' AND id = $1", [id]);
@@ -321,28 +368,33 @@ export class PostgresRepository implements Repository {
     for (const row of auth.rows) if (authKeys.includes(row.kind)) (state[row.kind as typeof authKeys[number]] as Record<string, unknown>)[row.id] = row.data;
     return state;
   }
-  private async save(connection: pg.PoolClient, before: DatabaseState, after: DatabaseState) {
+  private async save(connection: pg.PoolClient, before: ReturnType<typeof originalRows>, after: DatabaseState) {
     let communityChanged = false;
     for (const [collection, table] of Object.entries(tables) as [keyof typeof tables, string][]) {
-      const previous = new Map(before[collection].map(row => [row.id, JSON.stringify(row)]));
-      const retained = new Set<string>();
+      const previous = before.get(collection)!;
       for (const row of after[collection]) {
-        retained.add(row.id);
-        if (previous.get(row.id) === JSON.stringify(row)) continue;
+        const original = previous.get(row.id);
+        previous.delete(row.id);
+        const encoded = JSON.stringify(row);
+        if (original === encoded) continue;
         communityChanged = true;
-        if (collection === 'entities') await connection.query(`INSERT INTO ${table}(id,kind,data) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET kind=EXCLUDED.kind,data=EXCLUDED.data`, [row.id, (row as Entity).type, row]);
-        else await connection.query(`INSERT INTO ${table}(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data`, [row.id, row]);
+        if (collection === 'entities') await connection.query(`INSERT INTO ${table}(id,kind,data) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET kind=EXCLUDED.kind,data=EXCLUDED.data`, [row.id, (row as Entity).type, encoded]);
+        else await connection.query(`INSERT INTO ${table}(id,data) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data`, [row.id, encoded]);
       }
-      for (const id of previous.keys()) if (!retained.has(id)) {
+      for (const id of previous.keys()) {
         await connection.query(`DELETE FROM ${table} WHERE id=$1`, [id]);
         communityChanged = true;
       }
     }
     for (const kind of authKeys) {
-      for (const [id, data] of Object.entries(after[kind])) if (JSON.stringify(before[kind][id]) !== JSON.stringify(data)) {
-        await connection.query('INSERT INTO klan_auth(kind,id,data) VALUES($1,$2,$3::jsonb) ON CONFLICT(kind,id) DO UPDATE SET data=EXCLUDED.data', [kind, id, JSON.stringify(data)]);
+      const previous = before.get(kind)!;
+      for (const [id, data] of Object.entries(after[kind])) {
+        const original = previous.get(id);
+        previous.delete(id);
+        const encoded = JSON.stringify(data);
+        if (original !== encoded) await connection.query('INSERT INTO klan_auth(kind,id,data) VALUES($1,$2,$3::jsonb) ON CONFLICT(kind,id) DO UPDATE SET data=EXCLUDED.data', [kind, id, encoded]);
       }
-      for (const id of Object.keys(before[kind])) if (!(id in after[kind])) await connection.query('DELETE FROM klan_auth WHERE kind=$1 AND id=$2', [kind, id]);
+      for (const id of previous.keys()) await connection.query('DELETE FROM klan_auth WHERE kind=$1 AND id=$2', [kind, id]);
     }
     return communityChanged;
   }
@@ -359,13 +411,22 @@ export class PostgresRepository implements Repository {
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
   }
-  async write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
+  write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
+    // Writers share an advisory lock. Queue them before checkout to keep connections available for readers.
+    if (this.pendingWrites >= 32)
+      return Promise.reject(new HttpError(503, 'WRITE_BUSY', 'Сервер занят сохранением изменений. Повторите запрос через несколько секунд.'));
+    this.pendingWrites++;
+    const result = this.writes.then(() => this.writeTransaction(fn)).finally(() => { this.pendingWrites--; });
+    this.writes = result.then(() => {}, () => {});
+    return result;
+  }
+  private async writeTransaction<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
     const connection = await this.pool.connect();
     try {
       await connection.query('BEGIN');
       await connection.query('SELECT pg_advisory_xact_lock(54652602)');
       const state = await this.load(connection);
-      const before = structuredClone(state);
+      const before = originalRows(state);
       const result = await fn(state);
       assignPublicIds(state);
       state.entities.forEach(upgradeChallengeGoal);
@@ -376,5 +437,5 @@ export class PostgresRepository implements Repository {
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
   }
-  async close() { await this.pool.end(); }
+  async close() { await this.writes; await this.pool.end(); }
 }

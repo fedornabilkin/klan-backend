@@ -29,6 +29,7 @@ services:
         format: raw
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
       PORT: '3001'
       DEMO_MODE: 'false'
     ports: ['127.0.0.1:3101:3001']

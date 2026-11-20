@@ -43,7 +43,17 @@ test('shared pages coalesce reads, negotiate gzip, invalidate on writes and resp
   assert.equal(zipped.headers.get('content-encoding'), 'gzip');
   assert.match(zipped.headers.get('vary')!, /Accept-Encoding/i);
   assert.equal(zipped.headers.get('cache-control'), 'no-store');
-  assert.deepEqual(await plain.json(), await zipped.json());
+  const tags = await plain.json();
+  assert.deepEqual(tags, await zipped.json());
+  const brotli = await get('/tags', cookie, 'br');
+  assert.equal(brotli.headers.get('content-encoding'), 'br');
+  assert.deepEqual(tags, await brotli.json());
+  const challenge = seed.entities.find(entity => entity.type === 'challenges')!;
+  await repo.write(state => { state.entities.push({ ...challenge, publicId: undefined, id: 'draft-challenge', status: 'draft' }); });
+  const detail = (id: string, session: string) => get('/challenges/' + id + '?view=detail', session);
+  assert.equal((await (await detail('draft-challenge', admin)).json()).data.id, 'draft-challenge');
+  assert.equal((await detail('draft-challenge', cookie)).status, 404);
+  assert.equal((await (await detail(challenge.id, admin)).json()).data.id, challenge.id);
   const teamIds = async (session: string) => (await (await get('/stats', session)).json()).data.teams.map((team: {id: string}) => team.id);
   const draftId = await repo.read(s => s.entities.find(e => e.id === draft.id)!.publicId);
   assert.equal((await get(`/teams/${draftId}?view=detail`,cookie)).status,404);

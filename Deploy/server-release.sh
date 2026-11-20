@@ -205,6 +205,10 @@ else
   compose config --quiet
 fi
 if declare -F service_prepare_data >/dev/null; then service_prepare_data; fi
+if [[ "$operation" == rollback && ! -f "$release_dir/Deploy/rotate-backups.sh" && -d "$deploy_root/backups" ]]; then
+  # The selected historical service hook predates retention.
+  bash "$(dirname -- "$script_path")/rotate-backups.sh" "$deploy_root/backups"
+fi
 changed=1
 service_start
 service_verify
@@ -221,3 +225,6 @@ finished=1
 trap 'exit 130' INT
 trap 'exit 143' TERM
 printf 'Production backend is running release %s\n' "$(basename -- "$release_dir")"
+if [[ "$operation" == deploy ]]; then
+  bash "$release_dir/Deploy/clean-images.sh" "$deploy_root" || printf 'WARNING: Docker cleanup incomplete; retry on next deployment.\n' >&2
+fi

@@ -29,26 +29,45 @@ if (databaseUrl) {
 } else repo = await MemoryRepository.persistent(demoDataFile, createSeed);
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 });
 const cookies = new WeakMap<WebSocket, string>();
-let pendingMessages: string[] = [];
-let flushScheduled = false;
+const pending = new Map<string, string>();
+let flushing = false;
+let timer: ReturnType<typeof setTimeout> | undefined;
+function scheduleBroadcast() {
+  if (!timer && !flushing) timer = setTimeout(() => { timer = undefined; void flush(); }, 200);
+}
 const broadcast: Broadcast = message => {
-  pendingMessages.push(JSON.stringify(message));
-  if (flushScheduled) return;
-  flushScheduled = true;
-  queueMicrotask(() => {
-  const messages = pendingMessages;
-  pendingMessages = [];
-  flushScheduled = false;
-  for (const socket of sockets.clients) if (socket.readyState === WebSocket.OPEN) {
-    void auth.userFromCookie(cookies.get(socket), false).then(user => {
-      if (!user) { socket.close(4001, 'Session expired'); return; }
-      if (socket.readyState !== WebSocket.OPEN) return;
-      if (socket.bufferedAmount > 1024 * 1024) socket.close(1013, 'Slow connection');
-      else for (const data of messages) socket.send(data);
-    }).catch(() => socket.close(4001, 'Session unavailable'));
+  if (!sockets.clients.size || pending.has('*')) return;
+  if (pending.size >= 128) {
+    pending.clear();
+    pending.set('*', JSON.stringify({ type: 'invalidate', resource: '*' }));
+  } else {
+    const key = message.type === 'activity' ? `activity:${message.data.id}` : message.resource;
+    pending.set(key, JSON.stringify(message));
   }
-  });
+  scheduleBroadcast();
 };
+
+// A timer and a community update can share the same fresh session checks.
+async function flush() {
+  if (flushing) return;
+  flushing = true;
+  const messages = [...pending.values()];
+  pending.clear();
+  try {
+    await Promise.all([...sockets.clients].map(async socket => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      try {
+        if (!await auth.userFromCookie(cookies.get(socket), false)) { socket.close(4001, 'Session expired'); return; }
+        if (socket.readyState !== WebSocket.OPEN) return;
+        if (socket.bufferedAmount > 1024 * 1024) socket.terminate();
+        else for (const data of messages) socket.send(data);
+      } catch { socket.close(1013, 'Session unavailable'); }
+    }));
+  } finally {
+    flushing = false;
+    if (pending.size) scheduleBroadcast();
+  }
+}
 const { app, auth } = createApp(repo, config, broadcast);
 const server = createServer(app);
 server.on('upgrade', async (request, socket, head) => {
@@ -60,15 +79,14 @@ server.on('upgrade', async (request, socket, head) => {
   } catch { socket.destroy(); }
 });
 sockets.on('connection', socket => { socket.on('error', () => socket.close()); socket.send(JSON.stringify({ type: 'connected' })); });
-const validation = setInterval(() => {
-  for (const socket of sockets.clients) void auth.userFromCookie(cookies.get(socket), false).then(user => { if (!user) socket.close(4001, 'Session expired'); }).catch(() => socket.close(4001, 'Session unavailable'));
-}, 30_000);
+const validation = setInterval(() => { if (!timer) void flush(); }, 30_000);
 validation.unref();
 server.listen(config.port, config.production ? '0.0.0.0' : '127.0.0.1', () => console.log(`KLAN API: http://localhost:${config.port}${config.demo ? ' (DEMO — isolated local data)' : ''}`));
 let closing = false;
 async function shutdown() {
   if (closing) return; closing = true;
   clearInterval(validation);
+  clearTimeout(timer);
   for (const socket of sockets.clients) socket.close(1001, 'Server shutdown');
   sockets.close();
   server.close(async () => { await repo.close(); process.exit(0); });

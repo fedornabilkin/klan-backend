@@ -16,11 +16,13 @@ for service in "$api" "$db"; do
   [[ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}} {{.State.Health.Status}}' "$service")" == 'klan-backend-production healthy' ]]
 done
 docker exec "$db" sh -ec 'test "$POSTGRES_DB" = klan'
+[[ ! -L "$root/backups" ]]
 mkdir -p "$root/backups"
 receipt="$root/backups/reviewed-$digest.applied"
 if [[ -f "$receipt" ]]; then
-  echo 'This snapshot was already applied. Previous production backup:'
-  cat "$receipt"
+  echo 'This snapshot was already applied.'
+  previous=$(cat -- "$receipt")
+  if [[ -f "$previous" ]]; then printf 'Previous production backup: %s\n' "$previous"; fi
   exit 0
 fi
 
@@ -57,6 +59,7 @@ docker exec -i "$db" pg_restore --file=/dev/null < "$partial"
 mv -- "$partial" "$backup"
 partial=''
 printf 'Previous production backup: %s\n' "$backup"
+bash "$job/rotate-backups.sh" "$root/backups" "${backup##*/}"
 docker exec -w "$stage" "$db" sh -ec 'exec psql -Xq -v export_mode=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f reviewed-data.sql'
 printf '%s\n' "$backup" > "$receipt"
 docker start "$api" >/dev/null

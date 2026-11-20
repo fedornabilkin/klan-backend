@@ -52,6 +52,20 @@ function harness(context, { previous = true } = {}) {
   write(join(bin, 'docker'), `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == 'compose version --short' ]]; then printf '2.30.0\\n'; exit 0; fi
+if [[ "$*" == "image inspect --format {{.Id}} "* ]]; then
+  if [[ "\${!#}" == klan-backend:* ]]; then echo 'sha256:${'1'.repeat(64)}'; else echo 'sha256:${'2'.repeat(64)}'; fi
+  exit 0
+fi
+if [[ "$1 $2" == 'image ls' ]]; then
+  for n in 1 2 3 4; do printf 'klan-backend %040d <none> sha256:%064d\\n' "$n" "$n" | sed "s/0/$n/g"; done
+  echo 'other/app latest <none> sha256:${'5'.repeat(64)}'
+  exit 0
+fi
+if [[ "$1 $2" == 'container ls' ]]; then
+  if [[ "\${!#}" == 'ancestor=sha256:${'4'.repeat(64)}' ]]; then echo stopped; fi
+  exit 0
+fi
+if [[ "$1 $2" == 'image rm' || "$2" == prune ]]; then echo "maintenance:$*" >> "$TEST_LOG"; exit 0; fi
 if [[ "$*" == 'network inspect klan-build' ]]; then exit 0; fi
 if [[ "$1" == image && "$2" == inspect ]]; then
   if [[ "$*" == *--format* ]]; then printf '%s\\n' "$TEST_SOURCE_SHA"; exit 0; fi
@@ -101,6 +115,7 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
   }
   write(join(source, 'Deploy', 'server-release.sh'), server);
   write(join(source, 'Deploy', 'service.sh'), service);
+  write(join(source, 'Deploy', 'clean-images.sh'), readFileSync(join(deployDirectory, 'clean-images.sh')));
   write(join(source, 'Docker', 'compose.production.yaml'), 'services: {}\n');
   write(join(source, 'Docker', 'Dockerfile'), 'FROM scratch\n');
   write(join(source, 'Docker', 'Dockerfile.dockerignore'), '*\n');
@@ -162,6 +177,17 @@ service_stop() { record_hook stop; [[ "$FAIL_STOP" != "$(cat "$release_dir/fixtu
     rollback: (extra = {}) => command(join(root, 'releases', oldId, 'Deploy', 'server-release.sh'), ['rollback'], extra),
   };
 }
+
+test('only unused backend versions and build intermediates are collected after activation', { skip: unavailable }, context => {
+  const fixture = harness(context);
+  const run = fixture.deploy();
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(fixture.log().filter(line => line.startsWith('maintenance:')), [
+    'maintenance:image rm klan-backend:' + '3'.repeat(40),
+    'maintenance:image prune --force --filter label=io.klan.backend.build-stage=true --filter until=168h',
+    'maintenance:builder prune --all --force --filter until=168h',
+  ]);
+});
 
 const transportEnvironment = {
   DEPLOY_HOST: 'server.example.test', DEPLOY_PORT: '22', DEPLOY_USER: 'deploy',
@@ -388,6 +414,7 @@ test('API image builds can use an isolated bridge when default bridge egress is 
   const result = fixture.deploy();
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.ok(fixture.log().includes('build-network:klan-build:buildkit=0'));
+  assert.ok(!fixture.log().some(line => line.startsWith('maintenance:builder prune')));
   assert.equal(fixture.current(), `releases/${fixture.newId}`);
 });
 
