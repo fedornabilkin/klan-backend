@@ -18,7 +18,9 @@ const plan = JSON.parse(readFileSync(resolve(positionals[0]), 'utf8').replace(/^
 const require = createRequire(join(project, 'package.json'));
 const ts = require('typescript');
 const worker = readFileSync(join(project, 'tools/importers/reviewed-members.ts'), 'utf8');
-const js = ts.transpileModule(worker, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+// The streamed module runs from the application root and uses the deployed backend's ID allocator.
+const js = ts.transpileModule(worker, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } })
+  .outputText.replace("from '../../src/user-ids.js'", "from './dist/user-ids.js'");
 const encoded = Buffer.from(JSON.stringify(plan)).toString('base64');
 const program = js + `
 import { PostgresRepository } from './dist/repository.js';
@@ -39,6 +41,10 @@ try {
   for (const u of report.review) console.log('Пропущено совпадение ФИО: ' + u.name + ' — ID ' + u.profileIds.join(', '));
   console.log('Профиль №' + report.publicId + ': ' + report.correctedName +
     (report.rename ? '${apply ? ' (исправлен)' : ' (будет исправлен)'}' : ' (уже исправлен)'));
+  if (report.numbers) {
+    for (const p of report.numbers.profiles) console.log(p.name + ': ' + (p.from === p.to ? '№' + p.to + ' (уже назначен)' : (p.from ? '№' + p.from : 'новый профиль') + ' → №' + p.to));
+    console.log('Обновления сохранённых данных участников: ' + report.numbers.snapshots + ', ссылок: ' + report.numbers.links);
+  }
 } finally { await repo.close(); }
 `;
 
