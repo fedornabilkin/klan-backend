@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Entity } from './shared/contracts.js';
 import { createSeed } from './seed.js';
 import { hydrateUser, updateProfile } from './domain.js';
-import { MemoryRepository } from './repository.js';
+import { MemoryRepository, type UsernameChange } from './repository.js';
 import { createAuth } from './auth.js';
 import { createApp } from './app.js';
 import type { Config } from './config.js';
@@ -81,7 +84,9 @@ test('identity edits retain ownership rules, cannot set access, and reject case-
   assert.throws(() => updateProfile(state, user.id, { ...identity, activeTeams: [] }, user));
   assert.throws(() => updateProfile(state, user.id, { ...identity, username: ` @${state.users[0]!.username!.toUpperCase()} ` }, user), { code: 'USERNAME_TAKEN' });
   assert.deepEqual(user, before);
-  assert.equal(updateProfile(state, user.id, identity, state.users[0]!).firstName, 'Роман');
+  const changes: UsernameChange[] = [];
+  assert.equal(updateProfile(state, user.id, { ...identity, usernameChangeComment: 'Уточнение контакта' }, state.users[0]!, { recordUsernameChange: c => changes.push(c) }).firstName, 'Роман');
+  assert.equal(changes.length, 1);
   assert.equal(updateProfile(state, user.id, { username: 'FEDORNABILKIN' }, user).username, 'FEDORNABILKIN');
 });
 
@@ -131,6 +136,50 @@ test('Telegram authentication uses immutable ID bindings despite profile usernam
   });
 });
 
+test('administrator username edits require a private, durable reason in the same transaction', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'klan-profile-audit-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = join(directory, 'state.json');
+  const seed = createSeed(), admin = seed.users[0]!, member = seed.users[1]!;
+  seed.telegramUsers['12345'] = member.id;
+  const repo = new MemoryRepository(seed, file);
+  const audit = async (): Promise<UsernameChange[]> => JSON.parse(await readFile(file, 'utf8')).usernameChanges;
+  const { app } = createApp(repo, config);
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port + '/api';
+  const login = await fetch(base + '/auth/demo', { method: 'POST', headers: { origin: config.origin, 'content-type': 'application/json' }, body: '{}' });
+  const headers = { cookie: login.headers.getSetCookie()[0]!.split(';')[0]!, origin: config.origin, 'content-type': 'application/json' };
+  const patch = (path: string, body: unknown) => fetch(base + path, { method: 'PATCH', headers, body: JSON.stringify(body) });
+  const path = '/admin/users/' + member.id;
+  for (const usernameChangeComment of [undefined, '  ', 'а'.repeat(1001)]) {
+    assert.equal((await patch(path, { username: '@new_contact', callsign: 'Не сохранять', usernameChangeComment })).status, 400);
+  }
+  assert.equal((await patch('/users/' + member.id, { username: null })).status, 400);
+  assert.equal((await patch('/admin/users/' + admin.id, { username: 'admin_handle' })).status, 400);
+  assert.equal((await patch(path, { username: admin.username, usernameChangeComment: 'Конфликт' })).status, 409);
+  assert.deepEqual(await audit(), []);
+  assert.equal(await repo.read(s => s.users[1]!.callsign), member.callsign);
+  const response = await patch(path, { username: ' @new_contact ', usernameChangeComment: '  Подтвердил лично  ', callsign: 'Сокол' });
+  assert.equal(response.status, 200);
+  const saved = (await response.json()).data;
+  assert.equal(saved.callsign, 'Сокол'); assert.equal(saved.username, 'new_contact');
+  assert.ok(!('usernameChangeComment' in saved));
+  assert.equal((await patch(path, { username: '@new_contact', callsign: 'Ветер' })).status, 200);
+  assert.equal((await patch('/users/' + member.id, { username: null, usernameChangeComment: 'По просьбе участника' })).status, 200);
+  assert.equal((await patch(path, { username: 'third_contact', usernameChangeComment: 'Добавлен контакт' })).status, 200);
+  const rows = await audit();
+  assert.deepEqual(rows.map(r => [r.previous, r.next, r.comment]), [
+    [member.username, 'new_contact', 'Подтвердил лично'], ['new_contact', null, 'По просьбе участника'], [null, 'third_contact', 'Добавлен контакт'],
+  ]);
+  assert.ok(rows.every(r => r.adminId === admin.id && r.userId === member.id && Number.isFinite(Date.parse(r.createdAt))));
+  assert.deepEqual(await repo.read(s => s.telegramUsers), seed.telegramUsers);
+  const feed = await (await fetch(base + '/activity', { headers })).text();
+  assert.ok(!feed.includes('Подтвердил лично'));
+  const restarted = await MemoryRepository.persistent(file, createSeed);
+  await restarted.write(() => undefined);
+  assert.deepEqual(await audit(), rows);
+});
 test('profile export and import preserve structured identity fields', async t => {
   const repo = new MemoryRepository(createSeed());
   const { app } = createApp(repo, config);

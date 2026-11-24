@@ -28,6 +28,13 @@ export interface DatabaseState {
     origin?: string; requestedAt?: string; decidedAt?: string;
   }>;
 }
+export interface UsernameChange {
+  adminId: string; userId: string; previous: string | null; next: string | null; comment: string; createdAt: string;
+}
+export type RecordUsernameChange = (change: UsernameChange) => void;
+type WriteOperation<T> = (state: DatabaseState, recordUsernameChange: RecordUsernameChange) => T | Promise<T>;
+type MemorySnapshot = DatabaseState & { usernameChanges?: UsernameChange[] };
+
 export interface Repository {
   readonly revision?: number;
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
@@ -42,7 +49,7 @@ export interface Repository {
   statistics?(includeDrafts: boolean): Promise<Statistics>;
   geographyUsers?(overview?: boolean): Promise<MapUser[]>;
   read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
-  write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
+  write<T>(fn: WriteOperation<T>): Promise<T>;
   close(): Promise<void>;
   ping?(): Promise<void>;
 }
@@ -57,24 +64,30 @@ export class MemoryRepository implements Repository {
   revision = 0;
   protected state: DatabaseState;
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(initial: DatabaseState = emptyState(), private file?: string) {
-    this.state = { ...structuredClone(initial), teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+  private usernameChanges: UsernameChange[];
+  constructor(initial: MemorySnapshot = emptyState(), private file?: string) {
+    const { usernameChanges = [], ...snapshot } = structuredClone(initial);
+    this.usernameChanges = usernameChanges;
+    this.state = { ...snapshot, teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
-  async write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
+  async write<T>(fn: WriteOperation<T>): Promise<T> {
     const operation = this.queue.then(async () => {
       const draft = structuredClone(this.state);
-      const result = await fn(draft);
+      const pending: UsernameChange[] = [];
+      const result = await fn(draft, change => pending.push(change));
+      const usernameChanges = pending.length ? this.usernameChanges.concat(pending) : this.usernameChanges;
       assignPublicIds(draft);
       draft.entities.forEach(upgradeChallengeGoal);
       if (this.file) {
         await mkdir(dirname(this.file), { recursive: true });
-        await writeFile(`${this.file}.tmp`, JSON.stringify(draft), 'utf8');
+        await writeFile(`${this.file}.tmp`, JSON.stringify({ ...draft, usernameChanges }), 'utf8');
         await rename(`${this.file}.tmp`, this.file);
       }
       this.state = draft;
+      this.usernameChanges = usernameChanges;
       this.revision++;
       return structuredClone(result);
     });
@@ -83,7 +96,7 @@ export class MemoryRepository implements Repository {
   }
   async close() { await this.queue; }
   static async persistent(file: string, seed: () => DatabaseState) {
-    let initial: DatabaseState;
+    let initial: MemorySnapshot;
     try { initial = JSON.parse(await readFile(file, 'utf8')); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; initial = seed(); }
     return new MemoryRepository(initial, file);
@@ -382,6 +395,15 @@ export class PostgresRepository implements Repository {
         await connection.query("UPDATE klan_entities SET data=data WHERE kind='challenges' AND NOT card ? 'teamCount'");
         await connection.query('INSERT INTO klan_migrations(version) VALUES(5)');
       }
+      const usernameAudit = await connection.query('SELECT version FROM klan_migrations WHERE version=6');
+      if (!usernameAudit.rowCount) {
+        await connection.query(`CREATE TABLE klan_username_changes (
+          id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, admin_id text NOT NULL, user_id text NOT NULL,
+          previous_username text, new_username text, comment text NOT NULL CHECK (length(trim(comment)) BETWEEN 1 AND 1000),
+          created_at timestamptz NOT NULL
+        )`);
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(6)');
+      }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
@@ -439,7 +461,7 @@ export class PostgresRepository implements Repository {
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
   }
-  write<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
+  write<T>(fn: WriteOperation<T>): Promise<T> {
     // Writers share an advisory lock. Queue them before checkout to keep connections available for readers.
     if (this.pendingWrites >= 32)
       return Promise.reject(new HttpError(503, 'WRITE_BUSY', 'Сервер занят сохранением изменений. Повторите запрос через несколько секунд.'));
@@ -448,17 +470,23 @@ export class PostgresRepository implements Repository {
     this.writes = result.then(() => {}, () => {});
     return result;
   }
-  private async writeTransaction<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> {
+  private async writeTransaction<T>(fn: WriteOperation<T>): Promise<T> {
     const connection = await this.pool.connect();
     try {
       await connection.query('BEGIN');
       await connection.query('SELECT pg_advisory_xact_lock(54652602)');
       const state = await this.load(connection);
       const before = originalRows(state);
-      const result = await fn(state);
+      const changes: UsernameChange[] = [];
+      const result = await fn(state, change => changes.push(change));
       assignPublicIds(state);
       state.entities.forEach(upgradeChallengeGoal);
       const communityChanged = await this.save(connection, before, state);
+      for (const change of changes) {
+        await connection.query(`INSERT INTO klan_username_changes
+          (admin_id,user_id,previous_username,new_username,comment,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [change.adminId, change.userId, change.previous, change.next, change.comment, change.createdAt]);
+      }
       await connection.query('COMMIT');
       if (communityChanged) this.revision++;
       return result;

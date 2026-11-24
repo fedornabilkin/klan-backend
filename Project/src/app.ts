@@ -8,7 +8,7 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { Activity, Entity, Resource, User, UserIdentity } from './shared/contracts.js';
 import type { Config } from './config.js';
-import type { CommunityPage, DatabaseState, Repository } from './repository.js';
+import type { CommunityPage, DatabaseState, RecordUsernameChange, Repository } from './repository.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
 import { compactDetail, entityCard, teamChallengeSummaries, userCard } from './resource-reads.js';
 import { excludeTeamMember, setTeamRole } from './team-members.js';
@@ -76,9 +76,9 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (!resources.includes(value as Resource)) throw notFound();
     return value as Resource;
   };
-  const mutate = async <T>(actor: User, collection: string, action: string, fn: (state: DatabaseState) => T, target?: (value: T) => Activity['target']) => {
-    const outcome = await repo.write(state => {
-      const data = fn(state); const destination = target?.(data);
+  const mutate = async <T>(actor: User, collection: string, action: string, fn: (state: DatabaseState, audit: RecordUsernameChange) => T, target?: (value: T) => Activity['target']) => {
+    const outcome = await repo.write((state, audit) => {
+      const data = fn(state, audit); const destination = target?.(data);
       const draft = !!destination && state.entities.some(entity => entity.status === 'draft' && destination.path === `/${entity.type}/${entity.id}`);
       return { data, activity: publicActivity(state, addActivity(state, actor, action, destination)), draft };
     });
@@ -298,9 +298,16 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (collection === 'users') throw new HttpError(400, 'TELEGRAM_REQUIRED', 'Участники создаются при входе через Telegram');
     res.status(201).json(await mutate(req.user!, collection, 'добавил запись', state => createEntity(state, collection, req.body, req.user!), entityTarget));
   });
+  const saveProfile = (actor: User, id: string, input: unknown, adminEditor = false) =>
+    mutate(actor, 'users', 'обновил профиль', (state, recordUsernameChange) =>
+      updateProfile(state, id, input, actor, { adminEditor, recordUsernameChange }), user => ({ title: user.name, path: userPath(user) }));
+  app.patch('/api/admin/users/:id', async (req, res) => {
+    requireCapability(req.user!, 'members.manage');
+    res.json(await saveProfile(req.user!, String(req.params.id), req.body, true));
+  });
   app.patch('/api/:resource/:id', async (req, res) => {
     const collection = resource(req); const id = req.params.id === 'me' ? req.user!.id : String(req.params.id);
-    if (collection === 'users') res.json(await mutate(req.user!, collection, 'обновил профиль', state => updateProfile(state, id, req.body, req.user!), user => ({ title: user.name, path: userPath(user) })));
+    if (collection === 'users') res.json(await saveProfile(req.user!, id, req.body));
     else res.json(await mutate(req.user!, collection, 'изменил запись', state => editEntity(state, collection, id, req.body, req.user!), entityTarget));
   });
   app.delete('/api/:resource/:id', async (req, res) => {

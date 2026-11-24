@@ -5,7 +5,7 @@ import type { Activity, Entity, Resource, User } from './shared/contracts.js';
 import { parseTagFilter } from './shared/tag-names.js';
 import { isCalendarDate, normalizeProfileEntries, profileEntryText } from './shared/profile-entries.js';
 import { formatProfileName, latestProfileDate, normalizeTelegramUsername } from './shared/profile-identity.js';
-import type { DatabaseState } from './repository.js';
+import type { DatabaseState, RecordUsernameChange } from './repository.js';
 import { forbidden, HttpError, notFound } from './errors.js';
 import { hasCapability, requireCapability } from './access.js';
 
@@ -57,6 +57,9 @@ export const profileSchema = z.object({
   const name = formatProfileName({ firstName: profile.firstName!, middleName: profile.middleName!, lastName: profile.lastName! });
   if (name.length > 120) context.addIssue({ code: 'custom', path: ['firstName'], message: 'Полное имя должно содержать не больше 120 символов' });
   if (profile.name !== undefined && profile.name !== name) context.addIssue({ code: 'custom', path: ['name'], message: 'Полное имя должно совпадать с именем, отчеством и фамилией' });
+});
+const adminProfileSchema = profileSchema.safeExtend({
+  usernameChangeComment: z.string().trim().max(1000, 'Комментарий должен содержать не более 1000 символов').optional(),
 });
 export const entitySchema = z.object({
   title: shortText, description: z.string().trim().max(5000), status: statusSchema.default('active'),
@@ -202,17 +205,28 @@ export function canonicalTags(state: DatabaseState, tags: { id: string; name: st
     return existing;
   });
 }
-export function updateProfile(state: DatabaseState, id: string, input: unknown, actor: User): User {
+export function updateProfile(state: DatabaseState, id: string, input: unknown, actor: User,
+  options?: { recordUsernameChange: RecordUsernameChange; adminEditor?: boolean }): User {
   const user = getUser(state, id);
-  if (actor.id !== user.id) requireCapability(actor, 'members.manage');
-  const values = profileSchema.parse(input);
+  const adminEdit = actor.id !== user.id || options?.adminEditor;
+  if (adminEdit) requireCapability(actor, 'members.manage');
+  const { usernameChangeComment, ...values } = adminEdit ? adminProfileSchema.parse(input)
+    : { ...profileSchema.parse(input), usernameChangeComment: undefined };
   const username = values.username;
+  const previous = normalizeTelegramUsername(user.username ?? '') || null;
+  const changeUsername = adminEdit && username !== undefined && (username || null) !== previous;
   if (username && state.users.some(candidate => candidate.id !== user.id && candidate.username && normalizeTelegramUsername(candidate.username).toLowerCase() === username.toLowerCase())) {
     throw new HttpError(409, 'USERNAME_TAKEN', 'Этот Telegram username уже указан в другом профиле');
   }
   if (values.tags) values.tags = canonicalTags(state, values.tags);
   if (values.facts) values.facts = normalizeProfileEntries(values.facts, `${user.id}:facts`);
   if (values.achievements) values.achievements = normalizeProfileEntries(values.achievements, `${user.id}:achievements`);
+  if (changeUsername) {
+    if (!usernameChangeComment) throw new HttpError(400, 'USERNAME_COMMENT_REQUIRED', 'Укажите причину изменения логина Telegram');
+    if (!options) throw new Error('Missing transaction audit writer');
+    options.recordUsernameChange({ adminId: actor.id, userId: user.id, previous, next: username || null,
+      comment: usernameChangeComment, createdAt: new Date().toISOString() });
+  }
   if (values.firstName !== undefined) {
     values.name = formatProfileName({ firstName: values.firstName, middleName: values.middleName!, lastName: values.lastName! });
   } else if (values.name !== undefined && values.name !== user.name) {
