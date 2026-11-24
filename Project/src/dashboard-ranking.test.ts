@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSeed } from './seed.js';
-import { dashboardTeamRanking, rankingCandidates } from './community-reads.js';
+import { challengePodiums, challengeTotals, dashboardTeamRanking, rankingCandidates } from './community-reads.js';
 
 test('главная предпочитает текущий челлендж, затем завершённый; будущие и черновики скрыты', () => {
   const now = new Date('2026-11-20');
@@ -26,4 +26,19 @@ test('четыре места совпадают с командным зачё�
   teams[4]!.status = 'draft';
   const ranking = dashboardTeamRanking(challenge, teams, new Map([['2',10],['3',20],['10',10],['4',1000]]));
   assert.deepEqual(ranking.leaders.map(t => [t.id,t.score]), [['3',20],['2',10],['10',10],['1',0]]);
+});
+
+test('призовые места считаются по подтверждённым результатам, отдельно для людей и команд', () => {
+  const now = new Date('2026-11-20'), state = createSeed(now);
+  const [one,two,three,four] = state.users;
+  const teams = state.entities.filter(e => e.type === 'teams');
+  const challenge = { ...state.entities.find(e => e.type === 'challenges')!, status:'completed',
+    results:[{user:one!,value:3,team:teams[0]!,date:'2026-11-01'}, {user:one!,value:4,team:teams[0]!,date:'2026-11-02'},
+      {user:two!,value:5,team:teams[1]!,date:'2026-11-01'}, {user:three!,value:1,date:'2026-11-01'}, {user:four!,value:0,date:'2026-11-01'}],
+    pendingResults:[{user:four!,value:500,sourceCell:'?',reason:'нет даты'}] };
+  const records = [challenge,{...challenge,id:'draft',status:'draft'}, {...challenge,id:'next',status:'active',schedule:{start:'2027-01-01',end:'2027-01-31'}}];
+  const places = challengePodiums(records, state.users, teams, challengeTotals(records), now);
+  assert.equal(places.length,1);
+  assert.deepEqual(places[0]!.people.map(p => p.score), [7,5,1]); assert.deepEqual(places[0]!.teams.map(t => t.score), [7,5]);
+  assert.equal(places[0]!.finished,true); assert.ok(!('bio' in places[0]!.people[0]!.user));
 });

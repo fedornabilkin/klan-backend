@@ -8,6 +8,8 @@ export class Presence {
   private readonly changes = new Map<string, boolean>();
   private timer?: ReturnType<typeof setTimeout>;
 
+  userIds() { return [...this.counts.keys()]; }
+
   connect(socket: WebSocket, userId: string) {
     this.clients.add(socket);
     const count = this.counts.get(userId) ?? 0;
@@ -23,7 +25,7 @@ export class Presence {
         this.changed(userId, false);
       }
     });
-    socket.send(JSON.stringify({ type: 'presence', online: [...this.counts.keys()] }));
+    socket.send(JSON.stringify({ type: 'presence', online: this.userIds() }));
   }
 
   heartbeat() {

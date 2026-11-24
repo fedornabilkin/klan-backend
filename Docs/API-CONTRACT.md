@@ -24,6 +24,10 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 - PUT /challenges/:id/results {date:'YYYY-MM-DD',value:number} (own participant, before challenge finish, date within schedule and not future)
 - Counted exercises and visits use whole numbers for new goals and results. Distance and geographic coordinates accept decimals.
 - PUT /books/:id/read {read:boolean}
+- GET /location-catalog/countries returns countries with two-letter codes and aliases. GET /location-catalog/cities accepts country, q, page and limit and returns matching cities with region and nullable coordinates.
+- POST /location-catalog/countries and PATCH /location-catalog/countries/:code accept {code,name}. POST /location-catalog/countries/:code/cities and PATCH /location-catalog/countries/:code/cities/:id accept {name,region,lat,lng}. Catalog mutations require `catalog.manage`. Coordinates can both be null. Country codes and city IDs are stable, and previous names remain search aliases.
+- GET /presence/users accepts page and limit and returns public display identities for the currently connected users in connection order. This authenticated endpoint uses the same presence set as /ws.
+- GET /stats includes `challenges` with current or final individual and team podiums. Each contains up to three places with positive confirmed scores in descending order. Ties use the same name and ID ordering as the challenge page.
 - GET /dashboard -> Dashboard; GET /activity (paginated); GET /stats -> Statistics
 - GET /users/me/export -> own profile JSON; POST /users/me/import {profile:{name,bio,location,facts,interests,achievements,tags}} -> User
 - WebSocket /ws with session cookie. Messages `{type:'invalidate',resource:string}` or `{type:'activity',data:Activity}`. Client refetches only affected data. After authentication, the server sends one presence snapshot `{type:'presence',online:string[]}` followed by batched `{type:'presence',joined:string[],left:string[]}` updates. IDs are internal user IDs. A member stays online while any authenticated tab is connected. Unresponsive connections expire after a missed heartbeat.

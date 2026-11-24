@@ -70,7 +70,7 @@ async function flush() {
     if (pending.size) scheduleBroadcast();
   }
 }
-const { app, auth } = createApp(repo, config, broadcast);
+const { app, auth } = createApp(repo, config, broadcast, undefined, () => presence.userIds());
 const server = createServer(app);
 server.on('upgrade', async (request, socket, head) => {
   try {

@@ -13,11 +13,13 @@ import { assignPublicIds } from './user-ids.js';
 import type { Activity, Entity, Item, Tag, User } from './shared/contracts.js';
 import { profileWithMemberships } from './domain.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, readStatistics, type MapUser } from './community-reads.js';
-import type { Statistics } from './shared/contracts.js';
+import type { LocationOverride } from './location-catalog.js';
+import type { Statistics, UserIdentity } from './shared/contracts.js';
 
 export interface DatabaseState {
   users: User[]; entities: Entity[]; tags: Tag[]; items: Item[]; activities: Activity[];
   teamExclusions: { id: string; teamId: string; userId: string; adminId: string; comment: string; createdAt: string }[];
+  locationOverrides: LocationOverride[];
   telegramUsers: Record<string, string>;
   managedAdmins: Record<string,string>;
   userPublicIds: Record<string, number>;
@@ -47,6 +49,8 @@ export interface Repository {
   readAnalytics?<T>(fn: (state: DatabaseState) => T, member?: string): Promise<T>;
   dashboardOverview?(at: Date, drafts:boolean): Promise<unknown>;
   statistics?(includeDrafts: boolean): Promise<Statistics>;
+  locationOverrides?(scopes: string[]): Promise<LocationOverride[]>;
+  presenceProfiles?(ids: string[]): Promise<UserIdentity[]>;
   geographyUsers?(overview?: boolean): Promise<MapUser[]>;
   read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
   write<T>(fn: WriteOperation<T>): Promise<T>;
@@ -56,7 +60,7 @@ export interface Repository {
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
 type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
-  return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
+  return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], locationOverrides: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
 
 /** A serialized unit of work. Failed callbacks never publish their mutations. */
@@ -68,7 +72,7 @@ export class MemoryRepository implements Repository {
   constructor(initial: MemorySnapshot = emptyState(), private file?: string) {
     const { usernameChanges = [], ...snapshot } = structuredClone(initial);
     this.usernameChanges = usernameChanges;
-    this.state = { ...snapshot, teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+    this.state = { ...snapshot, locationOverrides: snapshot.locationOverrides ?? [], teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
   }
@@ -94,6 +98,10 @@ export class MemoryRepository implements Repository {
     this.queue = operation.catch(() => undefined);
     return operation;
   }
+  async locationOverrides(scopes: string[]) {
+    await this.queue;
+    return structuredClone(this.state.locationOverrides.filter(row => scopes.includes(row.scope)));
+  }
   async close() { await this.queue; }
   static async persistent(file: string, seed: () => DatabaseState) {
     let initial: MemorySnapshot;
@@ -113,7 +121,7 @@ CREATE TABLE IF NOT EXISTS klan_items (id text PRIMARY KEY, data jsonb NOT NULL)
 CREATE TABLE IF NOT EXISTS klan_activities (id text PRIMARY KEY, data jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(kind,id));
 `;
-const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities', teamExclusions: 'klan_team_exclusions' } as const;
+const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities', teamExclusions: 'klan_team_exclusions', locationOverrides: 'klan_location_overrides' } as const;
 const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins'] as const;
 
 // Keep the original JSON for delta detection without cloning a second graph of profiles and results.
@@ -143,6 +151,17 @@ export class PostgresRepository implements Repository {
     });
   }
   async ping() { await this.pool.query('SELECT 1'); }
+  async locationOverrides(scopes: string[]): Promise<LocationOverride[]> {
+    const rows = await this.pool.query("SELECT data FROM klan_location_overrides WHERE data->>'scope'=ANY($1::text[])", [scopes]);
+    return rows.rows.map(row => row.data);
+  }
+  async presenceProfiles(ids: string[]): Promise<UserIdentity[]> {
+    const rows = await this.pool.query<UserIdentity>(`SELECT u.id, p.*, u.id IN (${activeTeamUserIds}) AS "hasActiveTeam"
+      FROM unnest($1::text[]) WITH ORDINALITY online(id, pos) JOIN klan_users u ON u.id=online.id,
+      jsonb_to_record(u.data) p(name text, "firstName" text, "lastName" text, callsign text, "publicId" float8, initials text, color text)
+      ORDER BY online.pos`, [ids]);
+    return rows.rows;
+  }
   async geographyUsers(overview = false): Promise<MapUser[]> {
     if (overview) {
       return (await this.pool.query(`SELECT id,id IN (${activeTeamUserIds}) AS "hasActiveTeam",p.* FROM klan_users,jsonb_to_record(data) p(name text,"firstName" text,"lastName" text,callsign text,"publicId" float8,
@@ -403,6 +422,11 @@ export class PostgresRepository implements Repository {
           created_at timestamptz NOT NULL
         )`);
         await connection.query('INSERT INTO klan_migrations(version) VALUES(6)');
+      }
+      const locationCatalog = await connection.query('SELECT version FROM klan_migrations WHERE version=7');
+      if (!locationCatalog.rowCount) {
+        await connection.query('CREATE TABLE klan_location_overrides (id text PRIMARY KEY, data jsonb NOT NULL)');
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(7)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }

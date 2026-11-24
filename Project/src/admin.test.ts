@@ -29,7 +29,7 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
       const group = ({ '1': '-1003', '2': '-1001', '3': '-1002' } as Record<string, string>)[String(user_id)];
       return { status: chat_id === group ? 'member' : 'left' } as T;
     },
-  });
+  }, () => ['user-1', 'user-2']);
   const server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
@@ -46,6 +46,16 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
   assert.equal((await request('/admin/analytics/members/missing', 0)).status, 404);
   const members = await request('/admin/analytics/members?limit=5&page=2', 0);
   assert.equal(members.status, 200); assert.equal((await members.json()).data.length, 5);
+  assert.equal((await fetch(base + '/presence/users')).status,401);
+  const online = await (await request('/presence/users?page=2&limit=1',1)).json();
+  assert.equal(online.meta.total,2); assert.equal(online.data[0].id,'user-2'); assert.ok(!('username' in online.data[0]));
+  const geo = '/location-catalog/countries';
+  assert.equal((await request(geo,1,'POST',{code:'ZZ',name:'Страна'})).status,403);
+  assert.equal((await request(geo,0,'POST',{code:'ZZ',name:'Страна'})).status,201);
+  assert.equal((await request(geo+'/ZZ',1,'PATCH',{code:'ZZ',name:'Имя'})).status,403);
+  assert.equal((await request(geo+'/ZZ/cities',0,'POST',{name:'Маяк',region:'',lat:0,lng:0})).status,201);
+  const places = await (await request('/location-catalog/cities?country=ZZ',1)).json();
+  assert.equal(places.data[0].name,'Маяк'); assert.equal(places.data[0].lat,0);
   const created = await request('/admin/catalogs/tags', 2, 'POST', { name: '  QA   tag  ' });
   assert.equal(created.status, 201);
   const tag = (await created.json()).data;

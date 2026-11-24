@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { Activity, Entity, Resource, User, UserIdentity } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { CommunityPage, DatabaseState, RecordUsernameChange, Repository } from './repository.js';
-import { dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
+import { challengePodiums, challengeTotals, publicIdentity, dashboardCards, dashboardTeamRanking, rankingCandidates, statistics } from './community-reads.js';
 import { compactDetail, entityCard, teamChallengeSummaries, userCard } from './resource-reads.js';
 import { excludeTeamMember, setTeamRole } from './team-members.js';
 import { activeTeamMembers, publicActivity } from './domain.js';
@@ -27,7 +27,7 @@ import { HttpError, notFound, forbidden } from './errors.js';
 import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, setResult, updateProfile, visibleState } from './domain.js';
 
 export type Broadcast = (message: { type: 'invalidate'; resource: string } | { type: 'activity'; data: Activity }) => void;
-export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies) {
+export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies, onlineUserIds: () => string[] = () => []) {
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -67,7 +67,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.use('/api/auth', rateLimit({ windowMs: 5 * 60 * 1000, limit: 400, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте позже.' } } }), auth.router);
   app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте через минуту.' } } }));
   app.use('/api', auth.requireAuth);
-  app.use('/api/location-catalog', createLocationCatalogRouter());
+  app.use('/api/location-catalog', createLocationCatalogRouter(repo, activity => notify('location-catalog', activity)));
   app.use('/api/admin/catalogs', createCatalogRouter(repo, notify));
   app.use('/api/admin/analytics', createAnalyticsRouter(repo));
   const query = (req: Request) => querySchema.parse(req.query);
@@ -130,6 +130,16 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       return updateProfile(state, req.user!.id, profile, req.user!);
     }, user => ({ title: user.name, path: userPath(user) })));
   });
+  app.get('/api/presence/users', async (req, res) => {
+    const page = paginate(onlineUserIds(), query(req));
+    const ids = page.data;
+    const data = !ids.length ? [] : repo.presenceProfiles ? await repo.presenceProfiles(ids) : await repo.read(state => {
+      const members = activeTeamMembers(state.entities);
+      const users = new Map(state.users.map(user => [user.id, user]));
+      return ids.flatMap(id => { const user = users.get(id); return user ? [publicIdentity(user, members.has(id))] : []; });
+    });
+    res.json({ data, meta:page.meta });
+  });
   app.get('/api/activity', async (req, res) => {
     const params = query(req);
     res.json(repo.activity ? await repo.activity(params, hasCapability(req.user, 'content.manage')) : await repo.read(state => {
@@ -186,9 +196,13 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     const includeDrafts = hasCapability(req.user, 'content.manage');
     await sendPage(req, res, `stats-${includeDrafts ? 'all' : 'published'}`, () => repo.statistics ? repo.statistics(includeDrafts) : repo.read(raw => {
       const state = visibleState(raw, req.user!);
+      const members = activeTeamMembers(state.entities);
+      const podiums = challengePodiums(state.entities.filter(e => e.type === 'challenges'),
+        state.users.map(user => publicIdentity(user, members.has(user.id))), state.entities.filter(e => e.type === 'teams' && e.status !== 'draft'),
+        challengeTotals(state.entities));
       return statistics(state.users.map(u => ({ city: u.location.city, tags: u.tags, achievements: u.achievements })),
         state.entities.filter(e => e.type === 'teams').map(e => ({ id: e.id, publicId: e.publicId, title: e.title, count: e.participants.length })),
-        state.activities.map(a => a.createdAt.slice(0, 10)));
+        state.activities.map(a => a.createdAt.slice(0, 10)), podiums);
     }));
   });
   app.put('/api/teams/:id/members/:userId/role', async (req, res) => {
