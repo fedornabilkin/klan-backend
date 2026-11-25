@@ -21,6 +21,7 @@ import { createBotChannel } from './bot-channel.js';
 import { createCatalogRouter, findOrCreateCatalogEntry } from './catalog.js';
 import { createAnalyticsRouter } from './analytics.js';
 import { membersMissing, missingMemberFields } from './admin-member-filters.js';
+import { likesEnabled } from './entity-likes.js';
 import { createLocationCatalogRouter } from './location-catalog.js';
 import { createAndAssignProfileTag } from './profile-tags.js';
 import { hasCapability, requireCapability } from './access.js';
@@ -283,14 +284,25 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       return { ...page, data: page.data.map(user => userCard(hydrateUser(state, user), true)) };
     }));
   });
+  const withLikes = async <T extends {id: string}>(rows: T[], viewer: string) => {
+    const totals = await repo.likeSummaries(rows.map(row => row.id), viewer);
+    return rows.map(row => ({...row, likes: totals.get(row.id) ?? {count: 0, liked: false}}));
+  };
+  app.put('/api/:resource/:id/like', async (req, res) => {
+    const collection = resource(req);
+    if (collection === 'users' || !likesEnabled(collection)) throw notFound();
+    const {liked} = z.object({liked: z.boolean()}).strict().parse(req.body);
+    res.set('Cache-Control', 'private, no-store').json({data: await repo.write({
+      resource: collection, id: String(req.params.id), userId: req.user!.id, liked, drafts: hasCapability(req.user, 'content.manage'),
+    })});
+  });
   app.get('/api/:resource', async (req, res) => {
     const collection = resource(req), params = query(req), cards = req.query.view === 'cards';
     if (collection === 'teams') {
       if (req.query.limit === undefined) params.limit = 30;
       if (req.query.sort === undefined) params.sort = 'name';
     }
-    if (repo.list) return res.json(await repo.list(collection, params, hasCapability(req.user, 'content.manage'), cards));
-    res.json(await repo.read(raw => {
+    const page = repo.list ? await repo.list(collection, params, hasCapability(req.user, 'content.manage'), cards) : await repo.read(raw => {
       const state = visibleState(raw,req.user!);
       if (!cards) return listResource(state,collection,params);
       if (collection === 'users') {
@@ -299,7 +311,12 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       }
       const page = paginate(filtered(state.entities.filter(e => e.type === collection),params),params);
       return {...page,data:page.data.map(entityCard)};
-    }));
+    });
+    if (likesEnabled(collection)) {
+      res.set('Cache-Control', 'private, no-store');
+      if (page.data.length) return res.json({...page, data: await withLikes(page.data, req.user!.id)});
+    }
+    res.json(page);
   });
   app.get('/api/:resource/:id', async (req, res) => {
     const collection = resource(req), compact = req.query.view === 'detail';
@@ -307,7 +324,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     const drafts = hasCapability(req.user, 'content.manage');
     const cacheKey = compact && (collection === 'teams' || collection === 'challenges')
       ? `${collection === 'teams' ? 'team' : 'challenge'}-${drafts ? 'all' : 'published'}` as const : undefined;
-    await sendPage(req, res, cacheKey, () => repo.detail ? repo.detail(collection,id,drafts,compact) : repo.read(raw => {
+    const load = () => repo.detail ? repo.detail(collection,id,drafts,compact) : repo.read(raw => {
       const state = visibleState(raw,req.user!);
       if (collection === 'users') return hydrateUser(state,getUser(state,id));
       const entity = getEntity(state,collection,id);
@@ -317,7 +334,12 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       if (collection === 'teams') Object.assign(entity, teamChallengeSummaries(state.entities, entity.id));
       return compactDetail(entity,users,new Map(state.entities.filter(t => t.type === 'teams')
         .map(t => [t.id,{id:t.id,publicId:t.publicId,title:t.title}])));
-    }), id);
+    });
+    if (likesEnabled(collection)) {
+      const [data] = await withLikes([await load()], req.user!.id);
+      return res.set('Cache-Control', 'private, no-store').json({data});
+    }
+    await sendPage(req, res, cacheKey, load, id);
   });
   app.post('/api/:resource', async (req, res) => {
     const collection = resource(req);

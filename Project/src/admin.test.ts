@@ -42,6 +42,28 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
   assert.equal((await request('/admin/catalogs/tags', 1)).status, 403);
   assert.equal((await request('/admin/analytics/community', 2)).status, 403);
   assert.equal((await request('/admin/analytics/community', 0)).status, 200);
+  const feedback = '/feedback/feedback-2';
+  const original = (await (await request(feedback, 1)).json()).data;
+  assert.deepEqual(original.likes, { count: 0, liked: false });
+  for (const role of [1, 2]) assert.equal((await request(feedback, role, 'PATCH', {status:'closed'})).status, 403);
+  const changed = (await (await request(feedback, 0, 'PATCH', {status:'resolved'})).json()).data;
+  assert.equal(changed.status, 'resolved');
+  assert.equal(changed.createdAt, original.createdAt);
+  assert.equal(changed.description, original.description);
+  assert.equal((await request(feedback, 0, 'PATCH', {status:'published'})).status, 400);
+  const vote = (index: number, liked: boolean) => request(`/feedback/${original.publicId}/like`, index, 'PUT', {liked});
+  const repeated = await Promise.all([vote(1,true),vote(1,true)]);
+  for (const response of repeated) assert.deepEqual((await response.json()).data,{count:1,liked:true});
+  assert.deepEqual((await (await vote(0,true)).json()).data,{count:2,liked:true});
+  assert.deepEqual((await (await request(feedback,2)).json()).data.likes,{count:2,liked:false});
+  const cards = (await (await request('/feedback?view=cards',1)).json()).data;
+  assert.deepEqual(cards.find((card: {id:string}) => card.id === original.id).likes,{count:2,liked:true});
+  assert.deepEqual((await (await vote(1,false)).json()).data,{count:1,liked:false});
+  assert.deepEqual((await (await vote(1,false)).json()).data,{count:1,liked:false});
+  assert.equal((await request('/news/news-1/like',1,'PUT',{liked:true})).status,404);
+  assert.equal((await request('/books/book-1/like',1,'PUT',{liked:true})).status,404);
+  assert.equal((await request('/feedback/missing/like',1,'PUT',{liked:true})).status,404);
+  assert.equal((await request(feedback+'/like',1,'PUT',{liked:'yes'})).status,400);
   assert.equal((await fetch(base + '/admin/users?missing=telegram')).status, 401);
   for (const role of [1, 2]) assert.equal((await request('/admin/users?missing=telegram', role)).status, 403);
   assert.equal((await request('/admin/users?missing=unknown', 0)).status, 400);
@@ -91,7 +113,7 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
 
 test('health reports database unavailability instead of a false healthy state', async t => {
   const memory = new MemoryRepository();
-  const repo: Repository = { read: memory.read.bind(memory), write: memory.write.bind(memory), close: memory.close.bind(memory), ping: async () => { throw new Error('database offline'); } };
+  const repo: Repository = { read: memory.read.bind(memory), write: memory.write.bind(memory), likeSummaries: memory.likeSummaries.bind(memory), close: memory.close.bind(memory), ping: async () => { throw new Error('database offline'); } };
   const { app } = createApp(repo, config);
   const server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });

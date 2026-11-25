@@ -273,7 +273,7 @@ function validateEntity(state: DatabaseState, entity: Entity, original?: Entity)
 export function createEntity(state: DatabaseState, resource: Entity['type'], input: unknown, actor: User): Entity {
   if (resource !== 'feedback') requireCapability(actor, 'content.manage');
   const values = entitySchema.parse(input);
-  if (resource === 'feedback' && (!hasCapability(actor, 'content.manage') || values.status === 'active')) values.status = 'open';
+  if (resource === 'feedback' && (actor.role !== 'admin' || values.status === 'active')) values.status = 'open';
   const entity: Entity = { ...values, id: randomUUID(), type: resource, createdAt: new Date().toISOString(), participants: [], author: actor, tags: canonicalTags(state, values.tags) };
   if (resource === 'books') entity.readers = [];
   if (resource === 'challenges') {
@@ -289,7 +289,7 @@ export function editEntity(state: DatabaseState, resource: Entity['type'], id: s
   const original = getEntity(state, resource, id);
   if (!(resource === 'feedback' && original.author?.id === actor.id)) requireCapability(actor, 'content.manage');
   const values = entityPatchSchema.parse(input);
-  if (resource === 'feedback' && !hasCapability(actor, 'content.manage') && values.status !== undefined) throw forbidden();
+  if (resource === 'feedback' && values.status !== undefined) requireAdmin(actor);
   if (values.tags) values.tags = canonicalTags(state, values.tags);
   if (resource === 'challenges' && values.goal) values.goal.scope = 'participant';
   const entity = { ...original, ...values };

@@ -9,7 +9,8 @@ import { cardProjection, readProjections } from './read-projections.js';
 import { activeTeamUserIds, entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
 import type { MissingMemberField } from './admin-member-filters.js';
-import type { Resource } from './shared/contracts.js';
+import type { LikeSummary, ListResponse, Resource } from './shared/contracts.js';
+import { likeTables, readLikeSummaries, writeLike, type LikeChange, type LikeRow } from './entity-likes.js';
 import { assignPublicIds } from './user-ids.js';
 import type { Activity, Entity, Item, Tag, User } from './shared/contracts.js';
 import { profileWithMemberships } from './domain.js';
@@ -36,16 +37,16 @@ export interface UsernameChange {
 }
 export type RecordUsernameChange = (change: UsernameChange) => void;
 type WriteOperation<T> = (state: DatabaseState, recordUsernameChange: RecordUsernameChange) => T | Promise<T>;
-type MemorySnapshot = DatabaseState & { usernameChanges?: UsernameChange[] };
+type MemorySnapshot = DatabaseState & { usernameChanges?: UsernameChange[]; entityLikes?: LikeRow[] };
 
 export interface Repository {
   readonly revision?: number;
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
   authRequest?(id: string): Promise<DatabaseState['authRequests'][string] | undefined>;
   readPage?<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T>;
-  list?(resource: Resource, query: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]): Promise<unknown>;
+  list?(resource: Resource, query: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]): Promise<ListResponse<{id: string}>>;
   exportProfile?(id: string): Promise<User>;
-  detail?(resource: Resource, id: string, drafts: boolean, compact: boolean): Promise<unknown>;
+  detail?(resource: Resource, id: string, drafts: boolean, compact: boolean): Promise<{id: string}>;
   activity?(query: Pick<Query,'page'|'limit'>, drafts: boolean): Promise<unknown>;
   readAnalytics?<T>(fn: (state: DatabaseState) => T, member?: string): Promise<T>;
   dashboardOverview?(at: Date, drafts:boolean): Promise<unknown>;
@@ -55,6 +56,8 @@ export interface Repository {
   geographyUsers?(overview?: boolean): Promise<MapUser[]>;
   read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T>;
   write<T>(fn: WriteOperation<T>): Promise<T>;
+  write(change: LikeChange): Promise<LikeSummary>;
+  likeSummaries(ids: string[], viewer: string): Promise<Map<string, LikeSummary>>;
   close(): Promise<void>;
   ping?(): Promise<void>;
 }
@@ -70,30 +73,63 @@ export class MemoryRepository implements Repository {
   protected state: DatabaseState;
   private queue: Promise<unknown> = Promise.resolve();
   private usernameChanges: UsernameChange[];
+  private entityLikes: LikeRow[];
   constructor(initial: MemorySnapshot = emptyState(), private file?: string) {
-    const { usernameChanges = [], ...snapshot } = structuredClone(initial);
+    const { usernameChanges = [], entityLikes = [], ...snapshot } = structuredClone(initial);
+    this.entityLikes = entityLikes;
     this.usernameChanges = usernameChanges;
     this.state = { ...snapshot, locationOverrides: snapshot.locationOverrides ?? [], teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
-  async write<T>(fn: WriteOperation<T>): Promise<T> {
+  async likeSummaries(ids: string[], viewer: string) {
+    await this.queue;
+    const totals = new Map<string, LikeSummary>();
+    const page = new Set(ids);
+    for (const {entityId, userId} of this.entityLikes) {
+      if (!page.has(entityId)) continue;
+      const summary = totals.get(entityId) ?? {count: 0, liked: false};
+      summary.count++;
+      summary.liked ||= userId === viewer;
+      totals.set(entityId, summary);
+    }
+    return totals;
+  }
+  write<T>(fn: WriteOperation<T>): Promise<T>;
+  write(change: LikeChange): Promise<LikeSummary>;
+  async write<T>(fn: WriteOperation<T> | LikeChange): Promise<T | LikeSummary> {
     const operation = this.queue.then(async () => {
-      const draft = structuredClone(this.state);
+      const draft = typeof fn === 'function' ? structuredClone(this.state) : this.state;
       const pending: UsernameChange[] = [];
-      const result = await fn(draft, change => pending.push(change));
+      let likes = this.entityLikes;
+      let result: T | LikeSummary;
+      if (typeof fn === 'function') {
+        result = await fn(draft, change => pending.push(change));
+        assignPublicIds(draft);
+        draft.entities.forEach(upgradeChallengeGoal);
+        if (likes.length) {
+          const entities = new Set(draft.entities.map(e => e.id));
+          const users = new Set(draft.users.map(u => u.id));
+          likes = likes.filter(row => entities.has(row.entityId) && users.has(row.userId));
+        }
+      } else {
+        const target = draft.entities.find(e => e.type === fn.resource && (e.id === fn.id || String(e.publicId) === fn.id));
+        if (!target || (target.status === 'draft' && !fn.drafts) || !draft.users.some(u => u.id === fn.userId)) throw notFound();
+        likes = likes.filter(row => row.entityId !== target.id || row.userId !== fn.userId);
+        if (fn.liked) likes.push({entityId: target.id, userId: fn.userId});
+        result = { count: likes.filter(row => row.entityId === target.id).length, liked: fn.liked };
+      }
       const usernameChanges = pending.length ? this.usernameChanges.concat(pending) : this.usernameChanges;
-      assignPublicIds(draft);
-      draft.entities.forEach(upgradeChallengeGoal);
       if (this.file) {
         await mkdir(dirname(this.file), { recursive: true });
-        await writeFile(`${this.file}.tmp`, JSON.stringify({ ...draft, usernameChanges }), 'utf8');
+        await writeFile(`${this.file}.tmp`, JSON.stringify({ ...draft, usernameChanges, entityLikes: likes }), 'utf8');
         await rename(`${this.file}.tmp`, this.file);
       }
       this.state = draft;
+      this.entityLikes = likes;
       this.usernameChanges = usernameChanges;
-      this.revision++;
+      if (typeof fn === 'function') this.revision++;
       return structuredClone(result);
     });
     this.queue = operation.catch(() => undefined);
@@ -429,6 +465,10 @@ export class PostgresRepository implements Repository {
         await connection.query('CREATE TABLE klan_location_overrides (id text PRIMARY KEY, data jsonb NOT NULL)');
         await connection.query('INSERT INTO klan_migrations(version) VALUES(7)');
       }
+      if (!(await connection.query('SELECT version FROM klan_migrations WHERE version=8')).rowCount) {
+        await connection.query(likeTables);
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(8)');
+      }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
@@ -486,7 +526,10 @@ export class PostgresRepository implements Repository {
     } catch (error) { await connection.query('ROLLBACK'); throw error; }
     finally { connection.release(); }
   }
-  write<T>(fn: WriteOperation<T>): Promise<T> {
+  likeSummaries(ids: string[], viewer: string) { return readLikeSummaries(this.pool, ids, viewer); }
+  write<T>(fn: WriteOperation<T>): Promise<T>;
+  write(change: LikeChange): Promise<LikeSummary>;
+  write<T>(fn: WriteOperation<T> | LikeChange): Promise<T | LikeSummary> {
     // Writers share an advisory lock. Queue them before checkout to keep connections available for readers.
     if (this.pendingWrites >= 32)
       return Promise.reject(new HttpError(503, 'WRITE_BUSY', 'Сервер занят сохранением изменений. Повторите запрос через несколько секунд.'));
@@ -495,10 +538,15 @@ export class PostgresRepository implements Repository {
     this.writes = result.then(() => {}, () => {});
     return result;
   }
-  private async writeTransaction<T>(fn: WriteOperation<T>): Promise<T> {
+  private async writeTransaction<T>(fn: WriteOperation<T> | LikeChange): Promise<T | LikeSummary> {
     const connection = await this.pool.connect();
     try {
       await connection.query('BEGIN');
+      if (typeof fn !== 'function') {
+        const summary = await writeLike(connection, fn);
+        await connection.query('COMMIT');
+        return summary;
+      }
       await connection.query('SELECT pg_advisory_xact_lock(54652602)');
       const state = await this.load(connection);
       const before = originalRows(state);
