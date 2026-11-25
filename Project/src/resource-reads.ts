@@ -8,6 +8,7 @@ import { missingMembersSql, type MissingMemberField } from './admin-member-filte
 export function entityCard(entity: Entity) {
   const { id, publicId, type, title, description, status, category, tags, createdAt, location, schedule, goal } = entity;
   return { id, publicId, type, title, description, status, category, tags, createdAt, location, schedule, goal,
+    ...(entity.bookAuthor && { bookAuthor: entity.bookAuthor }),
     ...(type === 'challenges' && { teamCount: new Set(entity.participants.flatMap(row => row.team ? [row.team.id] : [])).size }),
     participantCount: entity.participantCount ?? entity.participants.length, readerCount: entity.readerCount ?? entity.readers?.length ?? 0 };
 }
@@ -219,7 +220,7 @@ export async function readList(db: PoolClient, resource: Resource, q: Query, dra
     const userFields = q.q.trim() ? 'name text,username text,callsign text,bio text,location jsonb,interests jsonb,facts jsonb,achievements jsonb,tags jsonb,"joinedAt" text'
       : 'name text,location jsonb,tags jsonb,"joinedAt" text';
     const fields = users ? userFields
-      : 'title text,description text,status text,category text,location jsonb,tags jsonb,"createdAt" text';
+      : 'title text,"bookAuthor" text,description text,status text,category text,location jsonb,tags jsonb,"createdAt" text';
     const rows = await db.query(`SELECT id,p.* FROM ${table}, jsonb_to_record(${users ? 'data' : 'card'}) p(${fields}) WHERE ${where} ORDER BY id`, args);
     const page = paginate(filtered(rows.rows as Entity[], q), q);
     ids = page.data.map(e => e.id); total = page.meta.total;

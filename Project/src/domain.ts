@@ -72,8 +72,10 @@ export const entitySchema = z.object({
 }).strict();
 // PATCH must not apply creation defaults to omitted fields.
 const entityPatchSchema = entitySchema.partial().extend({ status: statusSchema.optional(), category: categorySchema.optional(), tags: tagsSchema.optional() });
-const bookCreateSchema = entitySchema.extend({ status: statusSchema.default('published') });
-const memberBookSchema = bookCreateSchema.pick({ title: true, description: true, category: true, content: true, tags: true, status: true });
+const bookAuthorSchema = z.string().trim().max(200).optional();
+const bookCreateSchema = entitySchema.extend({ status: statusSchema.default('published'), bookAuthor: bookAuthorSchema });
+const bookPatchSchema = entityPatchSchema.extend({ bookAuthor: bookAuthorSchema });
+const memberBookSchema = bookCreateSchema.pick({ title: true, description: true, category: true, content: true, tags: true, status: true, bookAuthor: true });
 export const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(100000).default(1), limit: z.coerce.number().int().min(1).max(100).default(12),
   q: z.string().max(200).default(''), sort: z.enum(['name', '-name', 'createdAt', '-createdAt']).default('-createdAt'),
@@ -171,7 +173,7 @@ export type SearchUser = Pick<User, 'id' | 'name' | 'username' | 'callsign' | 'b
 function searchText(record: SearchUser | Entity) {
   return 'name' in record
     ? [record.name, record.username, record.callsign, record.bio, record.location?.city, record.location?.country, ...(record.interests ?? []), ...(record.facts ?? []).filter(communityFact).map(profileEntryText), ...(record.achievements ?? []).map(profileEntryText), ...(record.tags ?? []).map(t => t.name)].join(' ')
-    : [record.title, record.description, record.category, record.location?.city, ...record.tags.map(t => t.name)].join(' ');
+    : [record.title, record.bookAuthor, record.description, record.category, record.location?.city, ...record.tags.map(t => t.name)].join(' ');
 }
 export function filtered<T extends SearchUser | Entity>(rows: T[], query: Query): T[] {
   const tags = parseTagFilter(query.tag ?? '');
@@ -292,7 +294,7 @@ export function createEntity(state: DatabaseState, resource: Entity['type'], inp
 export function editEntity(state: DatabaseState, resource: Entity['type'], id: string, input: unknown, actor: User): Entity {
   const original = getEntity(state, resource, id);
   if (!(resource === 'feedback' && original.author?.id === actor.id)) requireCapability(actor, 'content.manage');
-  const values = entityPatchSchema.parse(input);
+  const values = (resource === 'books' ? bookPatchSchema : entityPatchSchema).parse(input);
   if (resource === 'feedback' && values.status !== undefined) requireAdmin(actor);
   if (values.tags) values.tags = canonicalTags(state, values.tags);
   if (resource === 'challenges' && values.goal) values.goal.scope = 'participant';
@@ -332,7 +334,7 @@ export function leaveEntity(state: DatabaseState, resource: string, id: string, 
   entity.participants = entity.participants.filter(p => p.user.id !== actor.id);
   return hydrateEntity(state, entity);
 }
-export function setResult(state: DatabaseState, id: string, actor: User, input: unknown, now = new Date()) {
+export function writeChallengeDay(state: DatabaseState, id: string, actor: User, input: unknown, now = new Date()) {
   const values = z.object({ date: z.iso.date(), value: z.number().nonnegative().max(1e7) }).strict().parse(input);
   const entity = getEntity(state, 'challenges', id);
   const participation = entity.participants.find(p => p.user.id === actor.id);
@@ -343,10 +345,19 @@ export function setResult(state: DatabaseState, id: string, actor: User, input: 
   if (entity.category === 'attendance' && ![0, 1].includes(values.value)) throw new HttpError(400, 'INVALID_ATTENDANCE', 'Для отметки посещения используйте 0 или 1');
   if (entity.category !== 'distance' && !Number.isInteger(values.value)) throw new HttpError(400, 'INVALID_CHALLENGE_RESULT', 'Укажите целый результат');
   entity.results ??= [];
-  const previous = entity.results.find(result => result.user.id === actor.id && result.date === values.date);
-  if (previous) previous.value = values.value;
-  else entity.results.push({ user: getUser(state, actor.id), ...values, ...(participation.team ? { team: participation.team } : {}) });
-  return hydrateEntity(state, entity);
+  const existing = entity.results.filter(result => result.user.id === actor.id && result.date === values.date);
+  if (existing.length) {
+    // Older imports can split one day across teams. Retain their credited amounts up to the new total.
+    let remaining = values.value;
+    for (const [index, row] of existing.entries()) {
+      row.value = index === existing.length - 1 ? remaining : Math.min(row.value, remaining);
+      remaining -= row.value;
+    }
+  } else entity.results.push({ user: getUser(state, actor.id), ...values, ...(participation.team ? { team: participation.team } : {}) });
+  return {entity, day:values};
+}
+export function setResult(state: DatabaseState, id: string, actor: User, input: unknown, now = new Date()) {
+  return hydrateEntity(state, writeChallengeDay(state, id, actor, input, now).entity);
 }
 
 export function listResource(state: DatabaseState, resource: Resource, query: Query) {

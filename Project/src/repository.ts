@@ -6,6 +6,7 @@ import { HttpError, notFound } from './errors.js';
 import { migratedGoal, upgradeChallengeGoal } from './challenge-goals.js';
 import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admins.js';
 import { cardProjection, readProjections } from './read-projections.js';
+import { starterBooks } from './starter-books.js';
 import { activeTeamUserIds, entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
 import type { MissingMemberField } from './admin-member-filters.js';
@@ -81,6 +82,13 @@ export class MemoryRepository implements Repository {
     this.state = { ...snapshot, locationOverrides: snapshot.locationOverrides ?? [], teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
+    for (const [id,, author] of starterBooks) {
+      const book = this.state.entities.find(e => e.type === 'books' && e.id === id);
+      if (book && book.bookAuthor === undefined && book.category === author) {
+        book.bookAuthor = author;
+        book.category = '';
+      }
+    }
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
   async likeSummaries(ids: string[], viewer: string) {
@@ -468,6 +476,15 @@ export class PostgresRepository implements Repository {
       if (!(await connection.query('SELECT version FROM klan_migrations WHERE version=8')).rowCount) {
         await connection.query(likeTables);
         await connection.query('INSERT INTO klan_migrations(version) VALUES(8)');
+      }
+      if (!(await connection.query('SELECT version FROM klan_migrations WHERE version=9')).rowCount) {
+        await connection.query(cardProjection);
+        for (const [id,, author] of starterBooks) {
+          await connection.query(`UPDATE klan_entities SET data=data || jsonb_build_object('bookAuthor',$2::text,'category','')
+            WHERE kind='books' AND id=$1 AND NOT (data ? 'bookAuthor') AND data->>'category'=$2`, [id, author]);
+        }
+        await connection.query(`UPDATE klan_entities SET data=data WHERE kind='books' AND data->>'bookAuthor' IS DISTINCT FROM card->>'bookAuthor'`);
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(9)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }

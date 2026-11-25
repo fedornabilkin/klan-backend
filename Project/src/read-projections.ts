@@ -3,7 +3,7 @@
 export const cardProjection = `
 CREATE OR REPLACE FUNCTION klan_card(doc jsonb) RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT AS $$
   SELECT jsonb_strip_nulls(jsonb_build_object('id',doc->'id','type',doc->'type','publicId',doc->'publicId',
-    'title',doc->'title','description',doc->'description','status',doc->'status','category',doc->'category',
+    'title',doc->'title','bookAuthor',doc->'bookAuthor','description',doc->'description','status',doc->'status','category',doc->'category',
     'tags',doc->'tags','createdAt',doc->'createdAt','schedule',doc->'schedule','location',doc->'location','goal',doc->'goal',
     'teamCount',CASE WHEN doc->>'type'='challenges' THEN (SELECT count(DISTINCT p#>>'{team,id}') FROM jsonb_array_elements(nullif(doc->'participants','null')) p) END,
     'participantCount',coalesce(jsonb_array_length(nullif(doc->'participants','null')),0),'readerCount',coalesce(jsonb_array_length(nullif(doc->'readers','null')),0)))

@@ -110,6 +110,9 @@ test('result is upserted by user/date, future date denied, finished challenge lo
   const entity = state.entities.find(e => e.id === 'challenge-1')!;
   assert.equal(entity.results!.filter(r => r.user.id === user.id && r.date === '2026-11-11').length, 1);
   assert.equal(entity.results!.find(r => r.user.id === user.id && r.date === '2026-11-11')!.value, 120);
+  entity.results!.push({user, date:'2026-11-11', value:7, team:{id:'team-2',title:'Другая команда'}});
+  setResult(state, entity.id, user, {date:'2026-11-11',value:126}, now);
+  assert.deepEqual(entity.results!.filter(r => r.user.id === user.id && r.date === '2026-11-11').map(r => r.value), [120,6]);
   assert.throws(() => setResult(state, entity.id, user, { date: '2026-11-12', value: 20 }, now), { code: 'INVALID_RESULT_DATE' });
   assert.throws(() => setResult(state, entity.id, user, { date: '2026-11-11', value: 20 }, new Date('2026-12-15')), { code: 'CHALLENGE_FINISHED' });
   assert.throws(() => leaveEntity(state, 'challenges', entity.id, user), { code: 'RESULTS_EXIST' });

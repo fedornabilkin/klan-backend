@@ -1,3 +1,4 @@
+import { starterBooks } from './starter-books.js';
 import type { Entity, User } from './shared/contracts.js';
 import { emptyState, type DatabaseState } from './repository.js';
 
@@ -64,13 +65,7 @@ export function createSeed(now = new Date()): DatabaseState {
     { ...base('feedback-1', 'feedback', 'Добавить маршруты выходного дня', 'Предлагаю собрать проверенные маршруты в пределах двух часов от города.'), status: 'in_progress', category: 'suggestion', author: state.users[3] },
     { ...base('feedback-2', 'feedback', 'Встречи для новичков', 'Было бы здорово раз в месяц проводить небольшую встречу для тех, кто только присоединился.'), status: 'open', category: 'suggestion', author: state.users[1] },
   );
-  const books = [
-    ['book-1', 'Атомные привычки', 'Джеймс Клир', 'Как маленькие ежедневные действия приводят к большим переменам. Практический подход к полезным привычкам.'],
-    ['book-2', 'В диких условиях', 'Джон Кракауэр', 'История поиска свободы, испытания одиночеством и силы природы. Книга для разговора о границах риска.'],
-    ['book-3', 'Сила воли', 'Келли Макгонигал', 'Почему мы принимаем решения и что помогает следовать собственным намерениям.'],
-    ['book-4', 'Человек в поисках смысла', 'Виктор Франкл', 'О внутренней свободе, ответственности и способности сохранять смысл в самых трудных обстоятельствах.'],
-  ] as const;
-  for (const [id, title, author, description] of books) state.entities.push({ ...base(id, 'books', title, description), category: author, readers: state.users.slice(0, 5 + Number(id.slice(-1))), tags: [state.tags[3]!] });
+  for (const [id, title, author, description] of starterBooks) state.entities.push({ ...base(id, 'books', title, description), bookAuthor: author, readers: state.users.slice(0, 5 + Number(id.slice(-1))), tags: [state.tags[3]!] });
   const rules = [
     ['rule-1', 'Кодекс сообщества', 'general', 'Уважай людей. Держи слово. Поддерживай тех, кто рядом.\n\nНе публикуй чужие личные данные. Спорь с идеей, а не с человеком. Реклама и спам без согласования запрещены.\n\nКаждый отвечает за свои действия, а сообщество помогает стать сильнее.'],
     ['rule-2', 'Правила офлайн-встреч', 'offline', 'Оценивай свои силы и подготовку. Сообщай организатору об ограничениях заранее.\n\nНе отходи от группы без предупреждения. Соблюдай местные правила и береги природу. Оставляй место чище, чем оно было.'],

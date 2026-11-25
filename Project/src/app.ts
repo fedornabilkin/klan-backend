@@ -26,7 +26,7 @@ import { createLocationCatalogRouter } from './location-catalog.js';
 import { createAndAssignProfileTag } from './profile-tags.js';
 import { hasCapability, requireCapability } from './access.js';
 import { HttpError, notFound, forbidden } from './errors.js';
-import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, setResult, updateProfile, visibleState } from './domain.js';
+import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, writeChallengeDay, updateProfile, visibleState } from './domain.js';
 
 export type Broadcast = (message: { type: 'invalidate'; resource: string } | { type: 'activity'; data: Activity }) => void;
 export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies, onlineUserIds: () => string[] = () => []) {
@@ -261,7 +261,13 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (catalogChanged) notify('items');
     res.json(result);
   });
-  app.put('/api/challenges/:id/results', async (req, res) => res.json(await mutate(req.user!, 'challenges', 'добавил результат в челлендж', state => setResult(state, String(req.params.id), req.user!, req.body), entityTarget)));
+  app.put('/api/challenges/:id/results', async (req, res) => {
+    const {data} = await mutate(req.user!, 'challenges', 'добавил результат в челлендж', state => {
+      const {entity, day} = writeChallengeDay(state, String(req.params.id), req.user!, req.body);
+      return {target:entityTarget(entity), result:req.query.view === 'day' ? day : hydrateEntity(state, entity)};
+    }, saved => saved.target);
+    res.json({data:data.result});
+  });
   app.put('/api/books/:id/read', async (req, res) => {
     const { read } = z.object({ read: z.boolean() }).strict().parse(req.body);
     res.json(await mutate(req.user!, 'books', read ? 'прочитал книгу' : 'снял отметку о прочтении', state => {
