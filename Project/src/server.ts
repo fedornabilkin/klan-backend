@@ -70,7 +70,13 @@ async function flush() {
     if (pending.size) scheduleBroadcast();
   }
 }
-const { app, auth } = createApp(repo, config, broadcast, undefined, () => presence.userIds());
+const socketSessionKeys = new WeakMap<WebSocket, string>();
+const { app, auth } = createApp(repo, config, broadcast, undefined, () => presence.userIds(), keys => {
+  const revoked = new Set(keys);
+  for (const socket of sockets.clients) {
+    if (revoked.has(socketSessionKeys.get(socket) ?? '')) socket.close(4001, 'Session expired');
+  }
+});
 const server = createServer(app);
 server.on('upgrade', async (request, socket, head) => {
   try {
@@ -81,6 +87,7 @@ server.on('upgrade', async (request, socket, head) => {
     }
     sockets.handleUpgrade(request, socket, head, client => {
       cookies.set(client, request.headers.cookie ?? '');
+      socketSessionKeys.set(client, auth.cookieKey(request.headers.cookie)!);
       sockets.emit('connection', client, request);
       presence.connect(client, user.id);
     });

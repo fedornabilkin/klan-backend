@@ -31,7 +31,7 @@ import { HttpError, notFound, forbidden } from './errors.js';
 import { addActivity, canonicalTags, createEntity, editEntity, filtered, getEntity, getUser, hydrateEntity, hydrateUser, joinEntity, leaveEntity, listResource, paginate, profileSchema, querySchema, requireAdmin, resources, writeChallengeDay, updateProfile, visibleState } from './domain.js';
 
 export type Broadcast = (message: { type: 'invalidate'; resource: string } | { type: 'activity'; data: Activity }) => void;
-export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies, onlineUserIds: () => string[] = () => []) {
+export function createApp(repo: Repository, config: Config, broadcast: Broadcast = () => undefined, authDependencies?: AuthDependencies, onlineUserIds: () => string[] = () => [], onSessionsRevoked?: (keys: string[]) => void) {
   const app = express();
   app.disable('x-powered-by');
   if (config.production) app.set('trust proxy', 1);
@@ -61,7 +61,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (activity) broadcast({ type: 'activity', data: activity });
   };
   const botChannel = createBotChannel();
-  const auth = createAuth(repo, config, activity => notify('users', activity), authDependencies ?? botChannel);
+  const auth = createAuth(repo, config, activity => notify('users', activity), authDependencies ?? botChannel, onSessionsRevoked);
   // A service endpoint, outside browser cookie authentication and Origin handling.
   app.use('/internal/telegram', createBotIngress(config.botInternalSecret, auth.handleTelegramUpdate, botChannel));
   app.use(['/api/auth/demo', '/api/auth/telegram/start'], rateLimit({ windowMs: 5 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много попыток входа. Попробуйте позже.' } } }));

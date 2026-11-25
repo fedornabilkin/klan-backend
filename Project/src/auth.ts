@@ -1,9 +1,10 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { Router, type RequestHandler, type Response } from 'express';
+import { Router, type Request, type RequestHandler, type Response } from 'express';
 import type { Activity, User } from './shared/contracts.js';
 import type { Config } from './config.js';
-import type { DatabaseState, Repository } from './repository.js';
+import type { DatabaseState, Repository, SessionPrincipal } from './repository.js';
+import { activityInterval, deviceInfo, revokeSessions, sessionList } from './sessions.js';
 import { HttpError } from './errors.js';
 import { addActivity, hydrateUser, publicActivity } from './domain.js';
 import { accessForLevel, resolveTelegramAccess } from './access.js';
@@ -75,6 +76,7 @@ export function createAuth(
   config: Config,
   onEvent?: (activity: Activity) => void,
   dependencies: AuthDependencies = {},
+  onSessionsRevoked?: (keys: string[]) => void,
 ) {
   const now = dependencies.now ?? Date.now;
   const router = Router();
@@ -155,19 +157,38 @@ export function createAuth(
     return { ...user, role: level, access: accessForLevel(level, 'demo') };
   }
 
-  async function userFromCookie(cookie?: string, withProfile = true): Promise<User | undefined> {
+  function cookieKey(cookie?: string) {
     const token = readCookie(cookie, sessionCookie);
-    if (!token || !/^[a-f0-9]{64}$/.test(token)) return undefined;
-    const sessionKey = hashToken(token);
+    return token && /^[a-f0-9]{64}$/.test(token) ? hashToken(token) : undefined;
+  }
+
+  async function userFromCookie(cookie?: string, withProfile = true, recordActivity = false): Promise<User | undefined> {
+    const sessionKey = cookieKey(cookie);
+    if (!sessionKey) return undefined;
     const value = repo.readSession ? await repo.readSession(sessionKey, now(), withProfile) : await repo.read((state) => {
       const session = state.sessions[sessionKey];
       if (!session || Date.parse(session.expiresAt) <= now()) return undefined;
       const user = state.users.find((candidate) => candidate.id === session.userId);
       if (!user) return undefined;
       const telegramId = Object.entries(state.telegramUsers).find(([, id]) => id === user.id)?.[0];
-      return { user: hydrateUser(state, user), telegramId, policy:state.accessSettings.site, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
+      return { user: hydrateUser(state, user), lastActiveAt:session.lastActiveAt, telegramId, policy:state.accessSettings.site, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
     });
     if (!value) return undefined;
+    const user = await resolvePrincipal(value, sessionKey);
+    const at = now();
+    if (user && recordActivity && !(Date.parse(value.lastActiveAt ?? '') > at - activityInterval)) {
+      if (repo.touchSession) await repo.touchSession(sessionKey, at);
+      else await repo.write(state => {
+        const session = state.sessions[sessionKey];
+        if (!session || Date.parse(session.expiresAt) <= at || Date.parse(session.lastActiveAt ?? '') > at - activityInterval) return;
+        session.lastActiveAt = new Date(at).toISOString();
+        if (!session.createdAt) session.firstSeenAt ??= session.lastActiveAt;
+      });
+    }
+    return user;
+  }
+
+  async function resolvePrincipal(value: SessionPrincipal, sessionKey: string): Promise<User | undefined> {
     if (value.source === 'demo') return config.demo && !config.production && value.user.id === config.demoUserId
       ? demoPrincipal(value.user) : undefined;
     if (!value.telegramId) return undefined;
@@ -184,7 +205,7 @@ export function createAuth(
 
   const requireAuth: RequestHandler = async (req, res, next) => {
     try {
-      const user = await userFromCookie(req.headers.cookie, !['GET', 'HEAD'].includes(req.method) || req.path === '/me');
+      const user = await userFromCookie(req.headers.cookie, !['GET', 'HEAD'].includes(req.method) || req.path === '/me', true);
       if (!user) {
         res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Войдите через Telegram, чтобы продолжить.' } });
         return;
@@ -206,17 +227,19 @@ export function createAuth(
     catch { console.warn('Authentication activity could not be broadcast.'); }
   }
 
-  async function issueSession(res: Response, user: User, previousCookie?: string, source: 'demo' | 'telegram' = 'telegram', revision?: string): Promise<void> {
+  async function issueSession(req: Request, res: Response, user: User, source: 'demo' | 'telegram' = 'telegram', revision?: string): Promise<void> {
     const token = randomBytes(32).toString('hex');
-    const previous = readCookie(previousCookie, sessionCookie);
+    const previous = cookieKey(req.headers.cookie);
+    const device = deviceInfo(req.get('user-agent'), req.ip);
     const activity = await repo.write((state) => {
       if (source === 'telegram') checkPolicy(state, revision);
       const timestamp = now();
       for (const [key, session] of Object.entries(state.sessions)) {
         if (Date.parse(session.expiresAt) <= timestamp) delete state.sessions[key];
       }
-      if (previous) delete state.sessions[hashToken(previous)];
-      state.sessions[hashToken(token)] = { userId: user.id, expiresAt: new Date(timestamp + config.sessionTtlMs).toISOString(), source };
+      if (previous) delete state.sessions[previous];
+      const createdAt = new Date(timestamp).toISOString();
+      state.sessions[hashToken(token)] = { userId: user.id, expiresAt: new Date(timestamp + config.sessionTtlMs).toISOString(), source, createdAt, lastActiveAt:createdAt, ...device };
       return publicActivity(state, addActivity(state, user, 'вошёл в сообщество'));
     });
     res.cookie(sessionCookie, token, { ...cookieOptions, maxAge: config.sessionTtlMs });
@@ -229,6 +252,24 @@ export function createAuth(
     res.json({ data: { demo: config.demo && !config.production, botUsername: currentBotUsername() ?? null } });
   });
   router.get('/me', requireAuth, (req, res) => res.json({ data: req.user }));
+  router.get('/sessions', requireAuth, async (req, res) => {
+    const key = cookieKey(req.headers.cookie)!;
+    const userId = req.user!.id;
+    const at = now();
+    const data = repo.userSessions
+      ? sessionList(await repo.userSessions(userId,at), key, userId, at)
+      : await repo.read(state => sessionList(state.sessions, key, userId, at));
+    res.json({data});
+  });
+  router.delete('/sessions/:target', requireAuth, async (req, res) => {
+    const key = cookieKey(req.headers.cookie)!;
+    const target = String(req.params.target);
+    if (target !== 'others' && !/^[a-f0-9]{64}$/.test(target)) throw failure(404, 'NOT_FOUND', 'Сессия не найдена.');
+    const revoked = await repo.write(state => revokeSessions(state.sessions, key, req.user!.id, target, now()));
+    if (revoked.includes(key)) res.clearCookie(sessionCookie, cookieOptions);
+    onSessionsRevoked?.(revoked);
+    res.sendStatus(204);
+  });
 
   router.post('/demo', async (req, res, next) => {
     try {
@@ -239,7 +280,7 @@ export function createAuth(
         return candidate ? demoPrincipal(hydrateUser(state, candidate)) : undefined;
       });
       if (!user) throw failure(503, 'DEMO_USER_NOT_FOUND', 'Профиль для демонстрационного входа не найден. Проверьте DEMO_USER_ID.');
-      await issueSession(res, user, req.headers.cookie, 'demo');
+      await issueSession(req, res, user, 'demo');
       res.json({ data: user });
     } catch (error) { next(error); }
   });
@@ -334,7 +375,7 @@ export function createAuth(
         res.json({ data: { status: 'denied' } });
         return;
       }
-      await issueSession(res, user, req.headers.cookie, 'telegram', binding.policy?.revision);
+      await issueSession(req, res, user, 'telegram', binding.policy?.revision);
       res.clearCookie(browserCookie, cookieOptions);
       res.json({ data: { status: 'approved', user } });
     } catch (error) { next(error); }
@@ -472,5 +513,5 @@ export function createAuth(
     if (update.callback_query) await handleCallback(update.callback_query);
   }
 
-  return { router, requireAuth, requireAdmin, userFromCookie, handleTelegramUpdate };
+  return { router, requireAuth, requireAdmin, userFromCookie, cookieKey, handleTelegramUpdate };
 }

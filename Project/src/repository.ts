@@ -18,6 +18,7 @@ import { profileWithMemberships } from './domain.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, readStatistics, type MapUser } from './community-reads.js';
 import type { LocationOverride } from './location-catalog.js';
 import type { Statistics, UserIdentity } from './shared/contracts.js';
+import { activityInterval, type SessionRecord } from './sessions.js';
 
 export interface DatabaseState {
   users: User[]; entities: Entity[]; tags: Tag[]; items: Item[]; activities: Activity[];
@@ -27,7 +28,7 @@ export interface DatabaseState {
   managedAdmins: Record<string,string>;
   accessSettings: { site?: import('./access-settings.js').SiteAccess };
   userPublicIds: Record<string, number>;
-  sessions: Record<string, { userId: string; expiresAt: string; source?: 'demo' | 'telegram' }>;
+  sessions: Record<string, SessionRecord>;
   authRequests: Record<string, {
     browserHash: string; expiresAt: string; status: 'pending' | 'approved' | 'rejected' | 'denied'; userId?: string;
     displayCode?: string; telegramId?: string; promptMessageId?: number;
@@ -44,6 +45,8 @@ type MemorySnapshot = DatabaseState & { usernameChanges?: UsernameChange[]; enti
 export interface Repository {
   readonly revision?: number;
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
+  userSessions?(userId: string, at: number): Promise<Record<string, SessionRecord>>;
+  touchSession?(key: string, at: number): Promise<void>;
   authRequest?(id: string): Promise<DatabaseState['authRequests'][string] | undefined>;
   readPage?<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T>;
   list?(resource: Resource, query: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]): Promise<ListResponse<{id: string}>>;
@@ -64,7 +67,7 @@ export interface Repository {
   ping?(): Promise<void>;
 }
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
-type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; policy?: DatabaseState['accessSettings']['site']; source?: 'demo' | 'telegram' };
+export type SessionPrincipal = { user: User; lastActiveAt?: string; telegramId?: string; managedAdmin?: boolean; policy?: DatabaseState['accessSettings']['site']; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
   return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], locationOverrides: [], telegramUsers: {}, managedAdmins: {}, accessSettings: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
@@ -332,6 +335,20 @@ export class PostgresRepository implements Repository {
     });
   }
 
+  async userSessions(userId: string, at: number): Promise<Record<string, SessionRecord>> {
+    const rows = await this.pool.query("SELECT id,data FROM klan_auth WHERE kind='sessions' AND data->>'userId'=$1 AND (data->>'expiresAt')::timestamptz > $2::timestamptz", [userId, new Date(at).toISOString()]);
+    return Object.fromEntries(rows.rows.map(row => [row.id,row.data]));
+  }
+
+  async touchSession(key: string, at: number) {
+    // UPDATE cannot resurrect a revoked session. Concurrent touches share the same five-minute window.
+    await this.pool.query(`UPDATE klan_auth SET data = data || jsonb_build_object('lastActiveAt',$2::text)
+      || CASE WHEN data ? 'createdAt' OR data ? 'firstSeenAt' THEN '{}'::jsonb ELSE jsonb_build_object('firstSeenAt',$2::text) END
+      WHERE kind='sessions' AND id=$1 AND (data->>'expiresAt')::timestamptz > $2::timestamptz
+      AND (data->>'lastActiveAt' IS NULL OR (data->>'lastActiveAt')::timestamptz <= $3::timestamptz)`,
+      [key,new Date(at).toISOString(),new Date(at - activityInterval).toISOString()]);
+  }
+
   private sessionBatch: {
     key: string; at: number;
     resolve: (value: SessionPrincipal | undefined) => void;
@@ -358,7 +375,7 @@ export class PostgresRepository implements Repository {
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
-        (SELECT data FROM klan_auth WHERE kind='accessSettings' AND id='site') AS policy,
+        (SELECT data FROM klan_auth WHERE kind='accessSettings' AND id='site') AS policy, s.data->>'lastActiveAt' AS seen,
         CASE WHEN $3 THEN (
           SELECT jsonb_agg(jsonb_build_object('kind', e.kind, 'team', CASE WHEN e.kind = 'teams' THEN
             jsonb_strip_nulls(jsonb_build_object('id', e.id, 'publicId', e.card->'publicId', 'title', e.card->'title', 'description', e.card->'description',
@@ -386,7 +403,7 @@ export class PostgresRepository implements Repository {
         user = profileWithMemberships(user, teams, stats);
       }
       rows.set(row.id, { expiresAt: Date.parse(row.expires), principal: {
-        user, policy:row.policy ?? undefined, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
+        user, lastActiveAt:row.seen ?? undefined, policy:row.policy ?? undefined, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
       } });
     }
     return rows;
@@ -487,6 +504,10 @@ export class PostgresRepository implements Repository {
         }
         await connection.query(`UPDATE klan_entities SET data=data WHERE kind='books' AND data->>'bookAuthor' IS DISTINCT FROM card->>'bookAuthor'`);
         await connection.query('INSERT INTO klan_migrations(version) VALUES(9)');
+      }
+      if (!(await connection.query('SELECT version FROM klan_migrations WHERE version=10')).rowCount) {
+        await connection.query("CREATE INDEX klan_sessions_user ON klan_auth ((data->>'userId')) WHERE kind='sessions'");
+        await connection.query('INSERT INTO klan_migrations(version) VALUES(10)');
       }
       await connection.query('COMMIT');
     } catch (error) { await connection.query('ROLLBACK'); throw error; }

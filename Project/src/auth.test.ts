@@ -7,6 +7,7 @@ import { createAuth, hashToken, isTelegramMember, readCookie, type AuthDependenc
 import { emptyState, MemoryRepository } from './repository.js';
 import { readConfig, type Config } from './config.js';
 import type { User } from './shared/contracts.js';
+import { sessionList } from './sessions.js';
 
 const admin: User = {
   id: 'admin', name: 'Тестовый участник', role: 'admin', bio: '', initials: 'ТУ', color: '#f97316',
@@ -40,6 +41,84 @@ async function fixture(overrides: Partial<Config> = {}, dependencies: AuthDepend
 }
 
 const telegramMessageId = 42;
+
+test('personal session management enforces an exact 24-hour delay on the acting login', async () => {
+  const day = 24 * 60 * 60_000;
+  const start = Date.UTC(2026,10,25);
+  let time = start;
+  const f = await fixture({sessionTtlMs:7 * day}, {now:() => time});
+  async function login(agent: string) {
+    const res = await fetch(f.base + '/demo', {method:'POST',headers:{'user-agent':agent,'x-forwarded-for':'192.0.2.1'}});
+    return res.headers.getSetCookie()[0]!.split(';')[0]!;
+  }
+  const get = async (cookie: string) => fetch(f.base + '/sessions', {headers:{cookie}});
+  const remove = async (cookie: string, id: string) => fetch(f.base + '/sessions/' + id, {method:'DELETE',headers:{cookie}});
+  try {
+    const old = await login('Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36');
+    time += day + 1000;
+    const fresh = await login('Mozilla/5.0 (iPhone) Version/18.0 Mobile Safari/604.1');
+    const freshList = (await (await get(fresh)).json()).data;
+    const [self,other] = freshList.items;
+    assert.equal(self.current,true);
+    assert.equal(self.browser,'Safari'); assert.equal(self.os,'iOS'); assert.equal(self.ip,'127.0.0.1');
+    assert.equal(self.createdAt,new Date(time).toISOString());
+    assert.equal(other.current,false); assert.equal(other.browser,'Chrome'); assert.equal(other.os,'Windows');
+    assert.equal(other.createdAt,new Date(start).toISOString());
+    const key = hashToken(fresh.split('=')[1]!);
+    assert.ok(!JSON.stringify(freshList).includes(key) && !JSON.stringify(freshList).includes(fresh.split('=')[1]!));
+    assert.equal((await get('')).status,401);
+    assert.equal((await remove(fresh,other.id)).status,403);
+    time += day - 1;
+    assert.equal((await remove(fresh,'others')).status,403);
+    assert.equal(await f.auth.userFromCookie(old).then(Boolean),true);
+    time++;
+    assert.equal((await remove(fresh,other.id)).status,204);
+    assert.equal((await get(old)).status,401);
+    const second = await login('Firefox/130.0'); const third = await login('Chrome/130.0');
+    assert.equal((await remove(fresh,'others')).status,204);
+    for (const cookie of [second,third]) assert.equal((await get(cookie)).status,401);
+    assert.equal((await (await get(fresh)).json()).data.items.length,1);
+    const newCookie = await login('Chrome/130.0');
+    const newId = (await (await get(newCookie)).json()).data.items[0].id;
+    assert.equal((await remove(newCookie,newId)).status,204,'self logout remains available immediately');
+    assert.equal((await get(newCookie)).status,401);
+  } finally { await f.close(); }
+});
+
+test('old sessions keep unknown login details and start their management delay on first authenticated use', async () => {
+  const day = 86_400_000;
+  let time = Date.UTC(2026,10,25);
+  const f = await fixture({sessionTtlMs:7 * day}, {now:() => time});
+  const token = 'a'.repeat(64);
+  const key = hashToken(token);
+  const cookie = 'klan_session=' + token;
+  const otherToken = 'b'.repeat(64);
+  const otherKey = hashToken(otherToken);
+  try {
+    await f.repo.write(state => {
+      state.sessions[key] = {userId:admin.id,source:'demo',expiresAt:new Date(time + 3 * day).toISOString()};
+      state.sessions[otherKey] = {userId:'another-profile',expiresAt:new Date(time + 3 * day).toISOString()};
+      state.sessions.expired = {userId:admin.id,expiresAt:new Date(time).toISOString()};
+    });
+    const list = () => fetch(f.base + '/sessions',{headers:{cookie}}).then(r => r.json()).then(r => r.data);
+    const initial = await list();
+    assert.equal(initial.items.length,1);
+    assert.equal(initial.items[0].createdAt,null); assert.equal(initial.items[0].ip,null);
+    assert.equal(initial.items[0].lastActiveAt,new Date(time).toISOString());
+    assert.equal(initial.revokeOthersAfter,new Date(time + day).toISOString());
+    time += 299999;
+    assert.equal((await list()).items[0].lastActiveAt,initial.items[0].lastActiveAt);
+    time++;
+    assert.equal((await list()).items[0].lastActiveAt,new Date(time).toISOString());
+    assert.equal((await list()).revokeOthersAfter,initial.revokeOthersAfter);
+    time += day;
+    const outsider = await f.repo.read(state => sessionList(state.sessions,otherKey,'another-profile',time).items[0]!);
+    const remove = (id:string) => fetch(f.base + '/sessions/' + id,{method:'DELETE',headers:{cookie}});
+    assert.equal((await remove(outsider.id)).status,404);
+    assert.equal((await remove('others')).status,204);
+    assert.ok(await f.repo.read(state => state.sessions[otherKey]));
+  } finally { await f.close(); }
+});
 const memberTelegram: AuthDependencies = { telegramRequest: async <T>(method: string) =>
   (method === 'sendMessage' ? { message_id: telegramMessageId } : { status: 'member' }) as T };
 
@@ -163,12 +242,15 @@ test('Production account-only sign-in still needs bot approval and respects expl
       const respond = await openInTelegram(f.auth, data.id, { id: telegramId, first_name: 'Участник' });
       assert.equal((await (await fetch(statusUrl, { headers: { cookie: browserCookie } })).json()).data.status, 'pending');
       await respond(true);
-      const approved = await fetch(statusUrl, { headers: { cookie: browserCookie } });
+      const approved = await fetch(statusUrl, { headers: { cookie: browserCookie, 'user-agent':'Mozilla/5.0 (Android) Chrome/130.0 Mobile Safari/537.36' } });
       const body = await approved.json();
       assert.equal(body.data.status, 'approved');
       assert.equal(body.data.user.access.level, role);
       const session = approved.headers.getSetCookie().find(cookie => cookie.startsWith('__Host-klan_session='))!;
       assert.match(session, /; Secure/);
+      const sessions = await fetch(f.base + '/sessions', {headers:{cookie:session.split(';')[0]!}});
+      const [browser] = (await sessions.json()).data.items;
+      assert.deepEqual([browser.current,browser.browser,browser.os,browser.ip],[true,'Chrome','Android','127.0.0.1']);
       assert.equal((await f.auth.userFromCookie(session.split(';')[0]))?.access?.level, role);
     }
     assert.deepEqual(telegramCalls, ['sendMessage', 'answerCallbackQuery', 'editMessageText', 'sendMessage', 'answerCallbackQuery', 'editMessageText']);

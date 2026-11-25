@@ -28,6 +28,18 @@ test('stored access settings survive restart and are read by both PostgreSQL ses
     for (const profile of [false,true]) assert.deepEqual((await reopened.readSession('test',Date.now(),profile))?.policy,policy);
     await repo.write(state => { state.accessSettings.site!.adminIds = []; state.accessSettings.site!.revision = randomUUID(); });
     assert.deepEqual((await reopened.readSession('test',Date.now(),false))?.policy?.adminIds,[]);
+    const at = Date.now();
+    await Promise.all([repo.touchSession('test',at), reopened.touchSession('test',at + 1)]);
+    const session = (await reopened.userSessions(user!.id,at + 1)).test!;
+    assert.ok(session.lastActiveAt);
+    assert.equal(session.firstSeenAt,session.lastActiveAt);
+    assert.equal(session.createdAt,undefined);
+    await repo.touchSession('test',at + 2000);
+    assert.equal((await reopened.readSession('test',at + 2000,false))?.lastActiveAt,session.lastActiveAt);
+    assert.deepEqual(await reopened.userSessions('other-user',at),{});
+    await repo.write(state => { delete state.sessions.test; });
+    await reopened.touchSession('test',at + 300000);
+    assert.deepEqual(await reopened.userSessions(user!.id,at),{});
   } finally {
     await Promise.all([repo.close(),reopened.close()]);
     await db.query('DROP SCHEMA ' + schema + ' CASCADE');
