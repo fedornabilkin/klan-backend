@@ -24,7 +24,8 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
     }
   });
   const { app } = createApp(repo, config, undefined, {
-    async telegramRequest<T>(_method: string, payload: object) {
+    async telegramRequest<T>(method: string, payload: object) {
+      if (method === 'getChat') return {id:-10088, type:'channel', title:'Новости Клана'} as T;
       const { chat_id, user_id } = payload as { chat_id: string; user_id: number };
       const group = ({ '1': '-1003', '2': '-1001', '3': '-1002' } as Record<string, string>)[String(user_id)];
       return { status: chat_id === group ? 'member' : 'left' } as T;
@@ -131,6 +132,26 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
   assert.equal((await request(`/news/${draft.id}`, 2)).status, 200);
   assert.equal((await request(`/news/${draft.id}`, 1)).status, 404);
   assert.equal((await request(`/news/${draft.id}`, 2, 'DELETE')).status, 200);
+  const path = '/admin/access';
+  assert.equal((await fetch(base + path)).status, 401);
+  const old = (await (await request(path, 0)).json()).data;
+  assert.deepEqual(old.groups.map((g:{id:string}) => g.id), config.telegramGroups);
+  const values = {revision:null, membersOnly:true, adminIds:['user-2'], groups:[{id:'-10088',title:'Новости Клана'}]};
+  for (const role of [1,2]) {
+    for (const [url, method, body] of [[path,'GET',undefined],[path,'PUT',values],[path+'/resolve','POST',{address:'@test_channel'}]] as const)
+      assert.equal((await request(url,role,method,body)).status,403);
+  }
+  assert.deepEqual((await (await request(path+'/resolve',0,'POST',{address:'https://t.me/test_channel'})).json()).data,values.groups[0]);
+  assert.deepEqual((await (await request(path+'/resolve',0,'POST',{address:'https://t.me/test_channel/15/235'})).json()).data,values.groups[0]);
+  assert.equal((await request(path+'/resolve',0,'POST',{address:'https://t.me/+invite'})).status,400);
+  assert.equal((await request(path,0,'PUT',{...values,adminIds:['nonexistent']})).status,400);
+  assert.equal((await request(path,0,'PUT',{...values,adminIds:[],groups:[]})).status,400);
+  const saved = await request(path,0,'PUT',values);
+  assert.equal(saved.status,200);
+  assert.deepEqual((await saved.json()).data.admins.map((u:{id:string}) => u.id),['user-2']);
+  assert.equal((await request(path,1)).status,200);
+  assert.equal((await request(path,1,'PUT',values)).status,409);
+  assert.equal((await request(path,0)).status,401);
 });
 
 test('health reports database unavailability instead of a false healthy state', async t => {

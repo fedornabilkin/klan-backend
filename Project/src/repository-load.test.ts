@@ -1,7 +1,39 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
+import { createSeed } from './seed.js';
 import { PostgresRepository } from './repository.js';
+
+test('stored access settings survive restart and are read by both PostgreSQL session paths', {skip:!process.env.TEST_DATABASE_URL}, async () => {
+  const url = new URL(process.env.TEST_DATABASE_URL!);
+  const schema = 'access_test_' + randomUUID().replaceAll('-','');
+  const db = new pg.Client({connectionString:url.href});
+  await db.connect();
+  await db.query('CREATE SCHEMA ' + schema);
+  url.searchParams.set('options','-c search_path=' + schema);
+  const repo = new PostgresRepository(url.href);
+  const reopened = new PostgresRepository(url.href);
+  try {
+    await repo.migrate();
+    const [user] = createSeed().users;
+    const policy = {revision:randomUUID(), membersOnly:true, adminIds:[user!.id], groups:[{id:'-1001', title:'Канал'}]};
+    await repo.write(state => {
+      state.users.push(user!);
+      state.telegramUsers['123456'] = user!.id;
+      state.sessions.test = {source:'telegram',userId:user!.id,expiresAt:new Date(Date.now()+60000).toISOString()};
+      state.accessSettings.site = policy;
+    });
+    assert.deepEqual(await reopened.read(state => state.accessSettings.site),policy);
+    for (const profile of [false,true]) assert.deepEqual((await reopened.readSession('test',Date.now(),profile))?.policy,policy);
+    await repo.write(state => { state.accessSettings.site!.adminIds = []; state.accessSettings.site!.revision = randomUUID(); });
+    assert.deepEqual((await reopened.readSession('test',Date.now(),false))?.policy?.adminIds,[]);
+  } finally {
+    await Promise.all([repo.close(),reopened.close()]);
+    await db.query('DROP SCHEMA ' + schema + ' CASCADE');
+    await db.end();
+  }
+});
 
 test('concurrent session reads keep each request time and do not reuse a previous decision', async t => {
   const batches: string[][] = [];

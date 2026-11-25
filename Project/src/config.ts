@@ -42,9 +42,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   try { origin = new URL(config.origin); } catch { throw new Error('APP_ORIGIN must be an absolute HTTP(S) origin'); }
   if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== config.origin || origin.username || origin.password) throw new Error('APP_ORIGIN must contain only scheme and host, without path, query or trailing slash');
   if (!demo && !config.databaseUrl) throw new Error('DATABASE_URL is required. For isolated local preview run npm run dev:demo.');
-  if (production && config.telegramGroupMembershipRequired && !config.telegramGroups.length) {
-    throw new Error('TELEGRAM_GROUP_IDS is required when Telegram group membership is checked');
-  }
   if (production && !config.botInternalSecret) throw new Error('BOT_INTERNAL_SECRET is required for the separate Telegram bot');
   if (production && origin.protocol !== 'https:') throw new Error('APP_ORIGIN must use HTTPS in production');
   return config;

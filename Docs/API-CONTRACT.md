@@ -4,6 +4,7 @@ Base `/api`. DTOs in Project/src/shared/contracts.ts. All routes except health a
 
 - GET /health; GET /auth/config -> {demo,botUsername}, with a null username until the bot connects; POST /auth/demo -> User (development only)
 - GET /auth/me -> User; POST /auth/logout
+- GET /admin/access returns `{revision, membersOnly, admins, groups}`. POST /admin/access/resolve accepts `{address}` (public Telegram handle, public t.me link or negative numeric chat ID) and returns `{id,title}`. PUT /admin/access accepts `{revision,membersOnly,adminIds,groups:[{id,title}]}` and returns updated settings. All three require an administrator. A stale revision returns 409. A selected internal profile requires a verified Telegram binding to sign in.
 - POST /auth/telegram/start -> {id,botUrl,expiresAt,displayCode}; GET /auth/telegram/status/:id -> {status:'pending'|'approved'|'expired'|'rejected'|'denied',user?:User} (sets session after approval in Telegram); POST /auth/telegram/cancel/:id -> 204 (cancels the initiating browser's request)
 - GET /users|events|teams|challenges|news|feedback|books|rules with page,limit,q,sort (`name`, `-name`, `createdAt`, `-createdAt`),status,category,tag (comma-separated names; legacy IDs accepted),city
 - GET /:resource?view=cards returns list fields, `participantCount` and `readerCount`. Team pages request `limit=30`.

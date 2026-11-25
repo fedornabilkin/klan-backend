@@ -58,6 +58,48 @@ test('Telegram membership excludes left, kicked and restricted non-members', () 
   for (const status of ['left', 'kicked', 'restricted', 'unknown']) assert.equal(isTelegramMember({ status }), false);
 });
 
+test('permanent access follows verified profile bindings and the latest saved communities throughout login', async () => {
+  const checks: string[] = [];
+  const f = await fixture({ demo:false, botInternalSecret:serviceSecret, telegramGroupMembershipRequired:false }, {
+    telegramRequest:async <T>(method:string, payload:object) => {
+      if (method === 'getChatMember') {
+        const {chat_id,user_id} = payload as {chat_id:string;user_id:number};
+        checks.push(chat_id);
+        return { status: user_id === 222 && chat_id === '-202' ? 'member' : 'left' } as T;
+      }
+      return {message_id:telegramMessageId} as T;
+    },
+  });
+  async function approve(id:number) {
+    const start = await fetch(f.base + '/telegram/start', {method:'POST'});
+    const browser = start.headers.getSetCookie()[0]!.split(';')[0]!;
+    const request = (await start.json()).data.id;
+    await (await openInTelegram(f.auth, request, {id, first_name:admin.name, username:'same_name'}))(true);
+    return () => fetch(f.base + '/telegram/status/' + request, {headers:{cookie:browser}});
+  }
+  try {
+    await f.repo.write(state => {
+      state.telegramUsers['111'] = admin.id;
+      state.accessSettings.site = {revision:'one', membersOnly:true, adminIds:[admin.id], groups:['-101','-202'].map(id => ({id,title:id}))};
+    });
+    const selected = await (await approve(111))();
+    assert.equal((await selected.json()).data.user.role, 'admin');
+    const cookie = selected.headers.getSetCookie().find(value => value.startsWith('klan_session='))!;
+    assert.equal((await f.auth.userFromCookie(cookie))?.role, 'admin');
+    assert.deepEqual(checks, []);
+    assert.equal((await (await (await approve(333))()).json()).data.status,'denied');
+    const member = await (await approve(222))();
+    assert.equal((await member.json()).data.user.role, 'member');
+    const memberCookie = member.headers.getSetCookie().find(value => value.startsWith('klan_session='))!;
+    assert.equal((await f.auth.userFromCookie(memberCookie))?.role, 'member');
+    const waiting = await approve(222);
+    await f.repo.write(state => { state.accessSettings.site = {revision:'two',membersOnly:true,adminIds:[],groups:[{id:'-101',title:'Новая группа'}]}; });
+    assert.equal((await (await waiting()).json()).data.status,'denied');
+    assert.equal(await f.auth.userFromCookie(memberCookie),undefined);
+    assert.equal(await f.auth.userFromCookie(cookie),undefined);
+  } finally { await f.close(); }
+});
+
 test('Cookie parsing handles malformed escapes without crashing', () => {
   assert.equal(readCookie('foo=1; klan_session=abc%3D; bar=2', 'klan_session'), 'abc=');
   assert.equal(readCookie('klan_session=%ZZ', 'klan_session'), undefined);

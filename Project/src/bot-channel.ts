@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter, once } from 'node:events';
 
-export type TelegramMethod = 'getChatMember' | 'sendMessage' | 'answerCallbackQuery' | 'editMessageText';
+export type TelegramMethod = 'getChat' | 'getChatMember' | 'sendMessage' | 'answerCallbackQuery' | 'editMessageText';
 export type TelegramCommand = { id: string; method: TelegramMethod; payload: object };
 export type BotIdentity = { id: number; username: string };
 export type CommandResult = { ok: false } | { ok: true; result?: unknown };

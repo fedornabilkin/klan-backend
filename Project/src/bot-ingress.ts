@@ -31,6 +31,7 @@ const commandResultSchema = z.object({
     z.object({
       ok: z.literal(true),
       result: z.union([
+        z.object({ id:id.negative(), type:z.enum(['group','supergroup','channel']), title:z.string().min(1).max(128) }),
         z.object({ status: z.string().max(32), is_member: z.boolean().optional() }),
         z.object({ message_id: id.positive() }),
       ]).optional(),

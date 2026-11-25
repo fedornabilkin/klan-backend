@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import express, { type ErrorRequestHandler, type Request } from 'express';
 import compression from 'compression';
@@ -16,6 +17,7 @@ import { activeTeamMembers, publicActivity } from './domain.js';
 import { pageResponses } from './page-cache.js';
 import { userPath } from './shared/user-links.js';
 import { createAuth, type AuthDependencies } from './auth.js';
+import { accessSettingsRouter } from './access-settings.js';
 import { createBotIngress } from './bot-ingress.js';
 import { createBotChannel } from './bot-channel.js';
 import { createCatalogRouter, findOrCreateCatalogEntry } from './catalog.js';
@@ -66,6 +68,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.use('/api/auth', rateLimit({ windowMs: 5 * 60 * 1000, limit: 400, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте позже.' } } }), auth.router);
   app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте через минуту.' } } }));
   app.use('/api', auth.requireAuth);
+  app.use('/api/admin/access', auth.requireAdmin, accessSettingsRouter(repo, config, authDependencies ?? botChannel, () => broadcast({type:'invalidate', resource:'access-settings'})));
   app.use('/api/location-catalog', createLocationCatalogRouter(repo, activity => notify('location-catalog', activity)));
   app.use('/api/admin/catalogs', createCatalogRouter(repo, notify));
   app.use('/api/admin/analytics', createAnalyticsRouter(repo));
@@ -372,6 +375,11 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
         const userId = getUser(state, id).id;
         if (userId === req.user!.id) throw new HttpError(409, 'SELF_DELETE', 'Нельзя удалить собственную административную учётную запись');
         state.users = state.users.filter(user => user.id !== userId);
+        const policy = state.accessSettings.site;
+        if (policy?.adminIds.includes(userId)) {
+          policy.adminIds = policy.adminIds.filter(id => id !== userId);
+          policy.revision = randomUUID();
+        }
         for (const entity of state.entities) {
           entity.participants = entity.participants.filter(p => p.user.id !== userId);
           entity.results = entity.results?.filter(r => r.user.id !== userId);

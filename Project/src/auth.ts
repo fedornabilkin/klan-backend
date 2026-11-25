@@ -11,6 +11,7 @@ import type { AccessSummary } from './shared/access.js';
 import { bindDeploymentAdmin, isDeploymentAdmin } from './deployment-admins.js';
 import { allocateUserPublicId } from './user-ids.js';
 import type { TelegramMethod } from './bot-channel.js';
+import type { SiteAccess } from './access-settings.js';
 
 declare global {
   namespace Express {
@@ -83,7 +84,7 @@ export function createAuth(
   const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/' };
   const membershipChecks = new Map<string, { expiresAt: number; access: AccessSummary | undefined }>();
   const pendingChecks = new Map<string, Promise<AccessSummary | undefined>>();
-  const requireMembership = config.telegramGroupMembershipRequired !== false;
+  let cachedPolicy: string | undefined;
 
   function requestDetails(request: DatabaseState['authRequests'][string]): string {
     const requestedAt = request.requestedAt ?? Date.parse(request.expiresAt) - authLifetimeMs;
@@ -99,19 +100,26 @@ export function createAuth(
     }
   }
 
-  async function telegramAccess(telegramId: string, fresh = false): Promise<AccessSummary | undefined> {
+  async function telegramAccess(telegramId: string, userId: string | undefined, policy: SiteAccess | undefined, fresh = false): Promise<AccessSummary | undefined> {
     if (!config.botInternalSecret) return undefined;
-    if (!requireMembership) {
+    if (userId && policy?.adminIds.includes(userId)) return accessForLevel('admin', 'telegram');
+    const groups = policy ? policy.groups.map(group => group.id) : config.telegramGroups;
+    if (!(policy?.membersOnly ?? config.telegramGroupMembershipRequired !== false)) {
       return accessForLevel(config.adminTelegramIds.includes(telegramId) ? 'admin' : 'member', 'telegram');
     }
-    if (config.telegramGroups.length === 0) return undefined;
+    if (!groups.length) return undefined;
+    if (cachedPolicy !== policy?.revision) {
+      membershipChecks.clear();
+      cachedPolicy = policy?.revision;
+    }
+    const key = (policy?.revision ?? 'env') + ':' + telegramId;
     const known = membershipChecks.get(telegramId);
     if (!fresh && known && known.expiresAt > now()) return known.access;
-    const pending = pendingChecks.get(telegramId);
+    const pending = pendingChecks.get(key);
     if (pending) return pending;
     const promise = (async () => {
       // A Telegram outage fails closed instead of extending an old permission indefinitely.
-      const results = await Promise.all(config.telegramGroups.map(async (chat_id) => {
+      const results = await Promise.all(groups.map(async (chat_id) => {
         try {
           const member = await telegram<TelegramMember>('getChatMember', { chat_id, user_id: Number(telegramId) });
           return isTelegramMember(member) ? chat_id : undefined;
@@ -119,15 +127,20 @@ export function createAuth(
       }));
       const matchedGroups = results.filter((id): id is string => !!id);
       const access = resolveTelegramAccess(matchedGroups, config.telegramGroupLevels ?? {}, config.adminTelegramIds.includes(telegramId));
-      membershipChecks.set(telegramId, { expiresAt: now() + (access ? config.membershipTtlMs ?? 60_000 : 15_000), access });
+      if (policy?.revision === cachedPolicy) membershipChecks.set(telegramId, { expiresAt: now() + (access ? config.membershipTtlMs ?? 60_000 : 15_000), access });
       return access;
     })();
-    pendingChecks.set(telegramId, promise);
-    try { return await promise; } finally { pendingChecks.delete(telegramId); }
+    pendingChecks.set(key, promise);
+    try { return await promise; } finally { pendingChecks.delete(key); }
   }
 
-  async function synchronizeAccess(userId: string, access: AccessSummary): Promise<User | undefined> {
+  function checkPolicy(state: DatabaseState, revision?: string) {
+    if (state.accessSettings.site?.revision !== revision) throw failure(409, 'SETTINGS_CHANGED', 'Правила доступа изменились. Повторите запрос.');
+  }
+
+  async function synchronizeAccess(userId: string, access: AccessSummary, revision?: string): Promise<User | undefined> {
     return repo.write(state => {
+      checkPolicy(state, revision);
       const user = state.users.find(candidate => candidate.id === userId);
       if (!user) return undefined;
       user.role = access.level === 'admin' ? 'admin' : 'member';
@@ -152,20 +165,20 @@ export function createAuth(
       const user = state.users.find((candidate) => candidate.id === session.userId);
       if (!user) return undefined;
       const telegramId = Object.entries(state.telegramUsers).find(([, id]) => id === user.id)?.[0];
-      return { user: hydrateUser(state, user), telegramId, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
+      return { user: hydrateUser(state, user), telegramId, policy:state.accessSettings.site, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
     });
     if (!value) return undefined;
     if (value.source === 'demo') return config.demo && !config.production && value.user.id === config.demoUserId
       ? demoPrincipal(value.user) : undefined;
     if (!value.telegramId) return undefined;
-    const granted = await telegramAccess(value.telegramId);
+    const granted = await telegramAccess(value.telegramId, value.user.id, value.policy);
     const access = granted && value.managedAdmin ? accessForLevel('admin','telegram') : granted;
     if (!access) {
-      await repo.write((state) => { delete state.sessions[sessionKey]; });
+      await repo.write((state) => { checkPolicy(state, value.policy?.revision); delete state.sessions[sessionKey]; });
       return undefined;
     }
     const role = access.level === 'admin' ? 'admin' : 'member';
-    if (value.user.role !== role || !isDeepStrictEqual(value.user.access, access)) return synchronizeAccess(value.user.id, access);
+    if (value.user.role !== role || !isDeepStrictEqual(value.user.access, access)) return synchronizeAccess(value.user.id, access, value.policy?.revision);
     return { ...value.user, role, access };
   }
 
@@ -193,10 +206,11 @@ export function createAuth(
     catch { console.warn('Authentication activity could not be broadcast.'); }
   }
 
-  async function issueSession(res: Response, user: User, previousCookie?: string, source: 'demo' | 'telegram' = 'telegram'): Promise<void> {
+  async function issueSession(res: Response, user: User, previousCookie?: string, source: 'demo' | 'telegram' = 'telegram', revision?: string): Promise<void> {
     const token = randomBytes(32).toString('hex');
     const previous = readCookie(previousCookie, sessionCookie);
     const activity = await repo.write((state) => {
+      if (source === 'telegram') checkPolicy(state, revision);
       const timestamp = now();
       for (const [key, session] of Object.entries(state.sessions)) {
         if (Date.parse(session.expiresAt) <= timestamp) delete state.sessions[key];
@@ -209,7 +223,7 @@ export function createAuth(
     publishActivity(activity);
   }
 
-  const currentBotUsername = () => config.botInternalSecret && (!requireMembership || config.telegramGroups.length > 0)
+  const currentBotUsername = () => config.botInternalSecret
     ? dependencies.botUsername?.() : undefined;
   router.get('/config', (_req, res) => {
     res.json({ data: { demo: config.demo && !config.production, botUsername: currentBotUsername() ?? null } });
@@ -245,7 +259,7 @@ export function createAuth(
 
   router.post('/telegram/start', async (_req, res, next) => {
     try {
-      if (!config.botInternalSecret || (requireMembership && config.telegramGroups.length === 0)) {
+      if (!config.botInternalSecret) {
         throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Для входа администратор должен настроить авторизацию через Telegram.');
       }
       const botUsername = currentBotUsername();
@@ -310,17 +324,17 @@ export function createAuth(
       // Recompute access before issuing a session in case group membership changed.
       const binding = await repo.read(state => {
         const id = Object.entries(state.telegramUsers).find(([, userId]) => userId === approvedUser.id)?.[0];
-        return {id, managed:isDeploymentAdmin(id,state.managedAdmins)};
+        return {id, policy:state.accessSettings.site, managed:isDeploymentAdmin(id,state.managedAdmins)};
       });
-      const granted = binding.id ? await telegramAccess(binding.id,true) : undefined;
+      const granted = binding.id ? await telegramAccess(binding.id, approvedUser.id, binding.policy, true) : undefined;
       const access = granted && binding.managed ? accessForLevel('admin','telegram') : granted;
-      const user = access ? await synchronizeAccess(approvedUser.id, access) : undefined;
+      const user = access ? await synchronizeAccess(approvedUser.id, access, binding.policy?.revision) : undefined;
       if (!user) {
         res.clearCookie(browserCookie, cookieOptions);
         res.json({ data: { status: 'denied' } });
         return;
       }
-      await issueSession(res, user, req.headers.cookie);
+      await issueSession(res, user, req.headers.cookie, 'telegram', binding.policy?.revision);
       res.clearCookie(browserCookie, cookieOptions);
       res.json({ data: { status: 'approved', user } });
     } catch (error) { next(error); }
@@ -390,7 +404,8 @@ export function createAuth(
     const telegramUser = query.from;
     const telegramId = String(telegramUser.id);
     const requestId = match?.[2];
-    const request = requestId ? await repo.read(state => state.authRequests[requestId]) : undefined;
+    const binding = requestId ? await repo.read(state => ({request:state.authRequests[requestId], userId:state.telegramUsers[telegramId], policy:state.accessSettings.site})) : undefined;
+    const request = binding?.request;
     const bound = request?.telegramId === telegramId && request.promptMessageId === message?.message_id;
     if (!requestId || !message || telegramUser.is_bot || message.chat.type !== 'private' || message.chat.id !== telegramUser.id || !bound) {
       await telegram('answerCallbackQuery', { callback_query_id: query.id, text: 'Запрос закрыт или недействителен.' }).catch(() => undefined);
@@ -399,13 +414,14 @@ export function createAuth(
     const wantsApproval = match?.[1] === 'ok';
     await telegram('answerCallbackQuery', { callback_query_id: query.id }).catch(() => undefined);
     const granted = wantsApproval && request.status === 'pending' && Date.parse(request.expiresAt) > now()
-      ? await telegramAccess(telegramId, true) : undefined;
+      ? await telegramAccess(telegramId, binding?.userId, binding?.policy, true) : undefined;
     const outcome = await repo.write((state) => {
       const current = state.authRequests[requestId];
       const decisionTime = now();
       if (!current || current.telegramId !== telegramId || current.promptMessageId !== message.message_id
         || Date.parse(current.expiresAt) <= decisionTime) return { status: 'expired' } as const;
       if (current.status !== 'pending') return { status: current.status, decidedAt: current.decidedAt };
+      if (wantsApproval) checkPolicy(state, binding?.policy?.revision);
       current.decidedAt = new Date(decisionTime).toISOString();
       if (!granted) {
         current.status = wantsApproval ? 'denied' : 'rejected';

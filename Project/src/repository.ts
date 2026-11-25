@@ -25,6 +25,7 @@ export interface DatabaseState {
   locationOverrides: LocationOverride[];
   telegramUsers: Record<string, string>;
   managedAdmins: Record<string,string>;
+  accessSettings: { site?: import('./access-settings.js').SiteAccess };
   userPublicIds: Record<string, number>;
   sessions: Record<string, { userId: string; expiresAt: string; source?: 'demo' | 'telegram' }>;
   authRequests: Record<string, {
@@ -63,9 +64,9 @@ export interface Repository {
   ping?(): Promise<void>;
 }
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
-type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; source?: 'demo' | 'telegram' };
+type SessionPrincipal = { user: User; telegramId?: string; managedAdmin?: boolean; policy?: DatabaseState['accessSettings']['site']; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
-  return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], locationOverrides: [], telegramUsers: {}, managedAdmins: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
+  return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], locationOverrides: [], telegramUsers: {}, managedAdmins: {}, accessSettings: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
 
 /** A serialized unit of work. Failed callbacks never publish their mutations. */
@@ -79,7 +80,7 @@ export class MemoryRepository implements Repository {
     const { usernameChanges = [], entityLikes = [], ...snapshot } = structuredClone(initial);
     this.entityLikes = entityLikes;
     this.usernameChanges = usernameChanges;
-    this.state = { ...snapshot, locationOverrides: snapshot.locationOverrides ?? [], teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
+    this.state = { ...snapshot, accessSettings: snapshot.accessSettings ?? {}, locationOverrides: snapshot.locationOverrides ?? [], teamExclusions: structuredClone(initial.teamExclusions ?? []), managedAdmins: {...initial.managedAdmins}, userPublicIds: structuredClone(initial.userPublicIds ?? {}) };
     assignPublicIds(this.state);
     this.state.entities.forEach(upgradeChallengeGoal);
     for (const [id,, author] of starterBooks) {
@@ -167,7 +168,7 @@ CREATE TABLE IF NOT EXISTS klan_activities (id text PRIMARY KEY, data jsonb NOT 
 CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY(kind,id));
 `;
 const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities', teamExclusions: 'klan_team_exclusions', locationOverrides: 'klan_location_overrides' } as const;
-const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins'] as const;
+const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins','accessSettings'] as const;
 
 // Keep the original JSON for delta detection without cloning a second graph of profiles and results.
 function originalRows(state: DatabaseState) {
@@ -357,6 +358,7 @@ export class PostgresRepository implements Repository {
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
+        (SELECT data FROM klan_auth WHERE kind='accessSettings' AND id='site') AS policy,
         CASE WHEN $3 THEN (
           SELECT jsonb_agg(jsonb_build_object('kind', e.kind, 'team', CASE WHEN e.kind = 'teams' THEN
             jsonb_strip_nulls(jsonb_build_object('id', e.id, 'publicId', e.card->'publicId', 'title', e.card->'title', 'description', e.card->'description',
@@ -384,7 +386,7 @@ export class PostgresRepository implements Repository {
         user = profileWithMemberships(user, teams, stats);
       }
       rows.set(row.id, { expiresAt: Date.parse(row.expires), principal: {
-        user, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
+        user, policy:row.policy ?? undefined, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
       } });
     }
     return rows;
