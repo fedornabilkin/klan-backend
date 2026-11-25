@@ -18,7 +18,7 @@ import { profileWithMemberships } from './domain.js';
 import { dashboardCards, dashboardTeamRanking, rankingCandidates, readStatistics, type MapUser } from './community-reads.js';
 import type { LocationOverride } from './location-catalog.js';
 import type { Statistics, UserIdentity } from './shared/contracts.js';
-import { activityInterval, type SessionRecord } from './sessions.js';
+import { sessionIdleMs, type SessionRecord } from './sessions.js';
 
 export interface DatabaseState {
   users: User[]; entities: Entity[]; tags: Tag[]; items: Item[]; activities: Activity[];
@@ -46,7 +46,7 @@ export interface Repository {
   readonly revision?: number;
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
   userSessions?(userId: string, at: number): Promise<Record<string, SessionRecord>>;
-  touchSession?(key: string, at: number): Promise<void>;
+  touchSessions?(activity: ReadonlyMap<string, number>, ttl: number): Promise<void>;
   authRequest?(id: string): Promise<DatabaseState['authRequests'][string] | undefined>;
   readPage?<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T>;
   list?(resource: Resource, query: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]): Promise<ListResponse<{id: string}>>;
@@ -67,7 +67,7 @@ export interface Repository {
   ping?(): Promise<void>;
 }
 export type CommunityPage = 'tags' | 'items' | 'tag-usage' | 'dashboard' | 'catalog-tags' | 'catalog-items';
-export type SessionPrincipal = { user: User; lastActiveAt?: string; telegramId?: string; managedAdmin?: boolean; policy?: DatabaseState['accessSettings']['site']; source?: 'demo' | 'telegram' };
+export type SessionPrincipal = { user: User; expiresAt: number; lastActiveAt?: string; telegramId?: string; managedAdmin?: boolean; policy?: DatabaseState['accessSettings']['site']; source?: 'demo' | 'telegram' };
 export function emptyState(): DatabaseState {
   return { users: [], entities: [], tags: [], items: [], activities: [], teamExclusions: [], locationOverrides: [], telegramUsers: {}, managedAdmins: {}, accessSettings: {}, userPublicIds: {}, sessions: {}, authRequests: {} };
 }
@@ -172,6 +172,10 @@ CREATE TABLE IF NOT EXISTS klan_auth (kind text NOT NULL, id text NOT NULL, data
 `;
 const tables = { users: 'klan_users', entities: 'klan_entities', tags: 'klan_tags', items: 'klan_items', activities: 'klan_activities', teamExclusions: 'klan_team_exclusions', locationOverrides: 'klan_location_overrides' } as const;
 const authKeys = ['telegramUsers', 'sessions', 'authRequests', 'userPublicIds','managedAdmins','accessSettings'] as const;
+
+// Older rows with no recorded activity retain their original expiry until their browser returns.
+const sessionDeadlineSql = `LEAST(COALESCE((s.data->>'expiresAt')::timestamptz, '-infinity'::timestamptz),
+  COALESCE(s.data->>'lastActiveAt', s.data->>'firstSeenAt', s.data->>'createdAt')::timestamptz + interval '${sessionIdleMs} milliseconds')`;
 
 // Keep the original JSON for delta detection without cloning a second graph of profiles and results.
 function originalRows(state: DatabaseState) {
@@ -336,17 +340,20 @@ export class PostgresRepository implements Repository {
   }
 
   async userSessions(userId: string, at: number): Promise<Record<string, SessionRecord>> {
-    const rows = await this.pool.query("SELECT id,data FROM klan_auth WHERE kind='sessions' AND data->>'userId'=$1 AND (data->>'expiresAt')::timestamptz > $2::timestamptz", [userId, new Date(at).toISOString()]);
+    const rows = await this.pool.query(`SELECT id,data FROM klan_auth s WHERE kind='sessions' AND data->>'userId'=$1 AND ${sessionDeadlineSql} > $2::timestamptz`, [userId, new Date(at).toISOString()]);
     return Object.fromEntries(rows.rows.map(row => [row.id,row.data]));
   }
 
-  async touchSession(key: string, at: number) {
-    // UPDATE cannot resurrect a revoked session. Concurrent touches share the same five-minute window.
-    await this.pool.query(`UPDATE klan_auth SET data = data || jsonb_build_object('lastActiveAt',$2::text)
-      || CASE WHEN data ? 'createdAt' OR data ? 'firstSeenAt' THEN '{}'::jsonb ELSE jsonb_build_object('firstSeenAt',$2::text) END
-      WHERE kind='sessions' AND id=$1 AND (data->>'expiresAt')::timestamptz > $2::timestamptz
-      AND (data->>'lastActiveAt' IS NULL OR (data->>'lastActiveAt')::timestamptz <= $3::timestamptz)`,
-      [key,new Date(at).toISOString(),new Date(at - activityInterval).toISOString()]);
+  async touchSessions(activity: ReadonlyMap<string, number>, ttl: number) {
+    const rows = Array.from(activity, ([id, at]) => ({id, seen:new Date(at).toISOString(), expires:new Date(at + ttl).toISOString()}));
+    // Serialize with login cleanup and revocation. Delayed writes only update still-live rows
+    // and never overwrite a newer timestamp from another request or API instance.
+    await this.pool.query(`WITH guard AS MATERIALIZED (SELECT pg_advisory_xact_lock_shared(54652602))
+      UPDATE klan_auth s SET data = s.data || jsonb_build_object('lastActiveAt',r.seen,'expiresAt',r.expires)
+        || CASE WHEN s.data ? 'createdAt' OR s.data ? 'firstSeenAt' THEN '{}'::jsonb ELSE jsonb_build_object('firstSeenAt',r.seen) END
+      FROM guard, jsonb_to_recordset($1::jsonb) r(id text, seen text, expires text)
+      WHERE s.kind='sessions' AND s.id=r.id AND ${sessionDeadlineSql} > r.seen::timestamptz
+        AND (s.data->>'lastActiveAt' IS NULL OR (s.data->>'lastActiveAt')::timestamptz < r.seen::timestamptz)`, [JSON.stringify(rows)]);
   }
 
   private sessionBatch: {
@@ -371,7 +378,7 @@ export class PostgresRepository implements Repository {
 
   private async sessionRows(keys: string[], at: number, withProfile: boolean) {
     const result = await this.pool.query(`
-      SELECT s.id, s.data->>'expiresAt' AS expires, CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport','importProvenance']
+      SELECT s.id, ${sessionDeadlineSql} AS expires, CASE WHEN $3 THEN u.data - ARRAY['communityImport','historicalImport','importProvenance']
         ELSE jsonb_build_object('id',u.id,'role',u.data->'role','access',u.data->'access') END AS profile, s.data->>'source' AS source,
         (SELECT id FROM klan_auth WHERE kind = 'telegramUsers' AND data = to_jsonb(u.id) LIMIT 1) AS telegram,
         (SELECT jsonb_object_agg(id,data) FROM klan_auth WHERE kind='managedAdmins') AS bindings,
@@ -387,7 +394,7 @@ export class PostgresRepository implements Repository {
             OR (e.kind = 'books' AND e.data @> jsonb_build_object('readers', jsonb_build_array(jsonb_build_object('id', u.id))))
         ) END AS memberships
       FROM klan_auth s JOIN klan_users u ON u.id = s.data->>'userId'
-      WHERE s.kind = 'sessions' AND s.id = ANY($1::text[]) AND (s.data->>'expiresAt')::timestamptz > $2::timestamptz`,
+      WHERE s.kind = 'sessions' AND s.id = ANY($1::text[]) AND ${sessionDeadlineSql} > $2::timestamptz`,
       [keys, new Date(at).toISOString(), withProfile]);
     const rows = new Map<string, { expiresAt: number; principal: SessionPrincipal }>();
     for (const row of result.rows) {
@@ -402,8 +409,9 @@ export class PostgresRepository implements Repository {
         }
         user = profileWithMemberships(user, teams, stats);
       }
-      rows.set(row.id, { expiresAt: Date.parse(row.expires), principal: {
-        user, lastActiveAt:row.seen ?? undefined, policy:row.policy ?? undefined, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
+      const expiresAt = new Date(row.expires).getTime();
+      rows.set(row.id, { expiresAt, principal: {
+        user, expiresAt, lastActiveAt:row.seen ?? undefined, policy:row.policy ?? undefined, managedAdmin:isDeploymentAdmin(row.telegram,row.bindings ?? {}), telegramId: row.telegram ?? undefined, source: row.source ?? undefined,
       } });
     }
     return rows;

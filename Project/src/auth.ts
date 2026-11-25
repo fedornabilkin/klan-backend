@@ -4,7 +4,8 @@ import { Router, type Request, type RequestHandler, type Response } from 'expres
 import type { Activity, User } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { DatabaseState, Repository, SessionPrincipal } from './repository.js';
-import { activityInterval, deviceInfo, revokeSessions, sessionList } from './sessions.js';
+import { deviceInfo, revokeSessions, sessionIsLive, sessionList } from './sessions.js';
+import { sessionActivity } from './session-activity.js';
 import { HttpError } from './errors.js';
 import { addActivity, hydrateUser, publicActivity } from './domain.js';
 import { accessForLevel, resolveTelegramAccess } from './access.js';
@@ -79,6 +80,7 @@ export function createAuth(
   onSessionsRevoked?: (keys: string[]) => void,
 ) {
   const now = dependencies.now ?? Date.now;
+  const activity = sessionActivity(repo, config.sessionTtlMs, now);
   const router = Router();
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   const sessionCookie = config.production ? '__Host-klan_session' : 'klan_session';
@@ -165,26 +167,20 @@ export function createAuth(
   async function userFromCookie(cookie?: string, withProfile = true, recordActivity = false): Promise<User | undefined> {
     const sessionKey = cookieKey(cookie);
     if (!sessionKey) return undefined;
+    await activity.flushDue();
     const value = repo.readSession ? await repo.readSession(sessionKey, now(), withProfile) : await repo.read((state) => {
       const session = state.sessions[sessionKey];
-      if (!session || Date.parse(session.expiresAt) <= now()) return undefined;
+      if (!session || !sessionIsLive(session, now())) return undefined;
       const user = state.users.find((candidate) => candidate.id === session.userId);
       if (!user) return undefined;
       const telegramId = Object.entries(state.telegramUsers).find(([, id]) => id === user.id)?.[0];
-      return { user: hydrateUser(state, user), lastActiveAt:session.lastActiveAt, telegramId, policy:state.accessSettings.site, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
+      return { user: hydrateUser(state, user), expiresAt:Date.parse(session.expiresAt), lastActiveAt:session.lastActiveAt, telegramId, policy:state.accessSettings.site, managedAdmin:isDeploymentAdmin(telegramId,state.managedAdmins), source: session.source };
     });
     if (!value) return undefined;
-    const user = await resolvePrincipal(value, sessionKey);
     const at = now();
-    if (user && recordActivity && !(Date.parse(value.lastActiveAt ?? '') > at - activityInterval)) {
-      if (repo.touchSession) await repo.touchSession(sessionKey, at);
-      else await repo.write(state => {
-        const session = state.sessions[sessionKey];
-        if (!session || Date.parse(session.expiresAt) <= at || Date.parse(session.lastActiveAt ?? '') > at - activityInterval) return;
-        session.lastActiveAt = new Date(at).toISOString();
-        if (!session.createdAt) session.firstSeenAt ??= session.lastActiveAt;
-      });
-    }
+    if (value.expiresAt <= at) return undefined;
+    const user = await resolvePrincipal(value, sessionKey);
+    if (user && recordActivity) await activity.record(sessionKey, at, value.lastActiveAt, value.expiresAt);
     return user;
   }
 
@@ -211,6 +207,9 @@ export function createAuth(
         return;
       }
       req.user = user;
+      if (req.path !== '/logout') {
+        res.cookie(sessionCookie, readCookie(req.headers.cookie, sessionCookie)!, { ...cookieOptions, maxAge: config.sessionTtlMs });
+      }
       next();
     } catch (error) { next(error); }
   };
@@ -231,11 +230,12 @@ export function createAuth(
     const token = randomBytes(32).toString('hex');
     const previous = cookieKey(req.headers.cookie);
     const device = deviceInfo(req.get('user-agent'), req.ip);
-    const activity = await repo.write((state) => {
+    await activity.flushDue();
+    const loginActivity = await repo.write((state) => {
       if (source === 'telegram') checkPolicy(state, revision);
       const timestamp = now();
       for (const [key, session] of Object.entries(state.sessions)) {
-        if (Date.parse(session.expiresAt) <= timestamp) delete state.sessions[key];
+        if (!sessionIsLive(session, timestamp)) delete state.sessions[key];
       }
       if (previous) delete state.sessions[previous];
       const createdAt = new Date(timestamp).toISOString();
@@ -243,7 +243,7 @@ export function createAuth(
       return publicActivity(state, addActivity(state, user, 'вошёл в сообщество'));
     });
     res.cookie(sessionCookie, token, { ...cookieOptions, maxAge: config.sessionTtlMs });
-    publishActivity(activity);
+    publishActivity(loginActivity);
   }
 
   const currentBotUsername = () => config.botInternalSecret
@@ -266,7 +266,10 @@ export function createAuth(
     const target = String(req.params.target);
     if (target !== 'others' && !/^[a-f0-9]{64}$/.test(target)) throw failure(404, 'NOT_FOUND', 'Сессия не найдена.');
     const revoked = await repo.write(state => revokeSessions(state.sessions, key, req.user!.id, target, now()));
-    if (revoked.includes(key)) res.clearCookie(sessionCookie, cookieOptions);
+    if (revoked.includes(key)) {
+      res.removeHeader('Set-Cookie');
+      res.clearCookie(sessionCookie, cookieOptions);
+    }
     onSessionsRevoked?.(revoked);
     res.sendStatus(204);
   });
@@ -513,5 +516,5 @@ export function createAuth(
     if (update.callback_query) await handleCallback(update.callback_query);
   }
 
-  return { router, requireAuth, requireAdmin, userFromCookie, cookieKey, handleTelegramUpdate };
+  return { router, requireAuth, requireAdmin, userFromCookie, cookieKey, handleTelegramUpdate, flushSessionActivity: activity.flush };
 }

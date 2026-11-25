@@ -7,7 +7,7 @@ import { createAuth, hashToken, isTelegramMember, readCookie, type AuthDependenc
 import { emptyState, MemoryRepository } from './repository.js';
 import { readConfig, type Config } from './config.js';
 import type { User } from './shared/contracts.js';
-import { sessionList } from './sessions.js';
+import { sessionIdleMs, sessionList } from './sessions.js';
 
 const admin: User = {
   id: 'admin', name: 'Тестовый участник', role: 'admin', bio: '', initials: 'ТУ', color: '#f97316',
@@ -41,6 +41,65 @@ async function fixture(overrides: Partial<Config> = {}, dependencies: AuthDepend
 }
 
 const telegramMessageId = 42;
+
+test('real requests renew the same browser cookie and the final request starts the seven-day idle period', async () => {
+  const week = sessionIdleMs;
+  const start = Date.UTC(2026,10,25);
+  let time = start;
+  const f = await fixture({sessionTtlMs:week}, {now:() => time});
+  try {
+    const login = await fetch(f.base + '/demo',{method:'POST'});
+    const cookie = login.headers.getSetCookie()[0]!.split(';')[0]!;
+    const key = hashToken(cookie.split('=')[1]!);
+    const me = () => fetch(f.base + '/me',{headers:{cookie}});
+    time += week - 60_000;
+    const active = await me();
+    assert.equal(active.status,200);
+    const renewed = active.headers.getSetCookie()[0]!;
+    assert.equal(renewed.split(';')[0],cookie);
+    assert.match(renewed,/Max-Age=604800/);
+    assert.match(renewed,/HttpOnly/);
+    time += 120_000;
+    assert.equal((await me()).status,200,'browser still works beyond its original expiry');
+    const lastUse = time;
+    assert.deepEqual(await f.repo.read(s => s.sessions[key]!.createdAt),new Date(start).toISOString());
+    time = lastUse + week - 1;
+    assert.ok(await f.auth.userFromCookie(cookie,false),'last request inside the five-minute batch is retained');
+    time++;
+    assert.equal((await me()).status,401,'even a connected WebSocket cannot keep the browser session alive');
+    assert.equal(await f.repo.read(s => s.sessions[key]!.expiresAt),new Date(time).toISOString());
+  } finally { await f.close(); }
+});
+
+test('successful Telegram login physically purges idle sessions at seven days and respects legacy expiry', async () => {
+  const at = Date.UTC(2026,10,25), week = sessionIdleMs;
+  const f = await fixture({demo:false,botInternalSecret:serviceSecret,telegramGroupMembershipRequired:false,sessionTtlMs:week},
+    {now:() => at, ...memberTelegram});
+  const stamp = (offset:number) => new Date(at + offset).toISOString();
+  try {
+    await f.repo.write(s => {
+      s.telegramUsers['1234'] = admin.id;
+      const base = {userId:admin.id,expiresAt:stamp(week)};
+      s.sessions.boundary = {...base,lastActiveAt:stamp(-week)};
+      s.sessions.older = {...base,lastActiveAt:stamp(-week - 1)};
+      s.sessions.legacyCreated = {...base,createdAt:stamp(-week)};
+      s.sessions.legacyFirstSeen = {...base,firstSeenAt:stamp(-week)};
+      s.sessions.legacyExpired = {...base,expiresAt:stamp(0)};
+      s.sessions.legacyLive = {...base,expiresAt:stamp(60_000)};
+      s.sessions.recent = {...base,createdAt:stamp(-3*week),lastActiveAt:stamp(-week+1)};
+    });
+    const start = await fetch(f.base + '/telegram/start',{method:'POST'});
+    const browser = start.headers.getSetCookie()[0]!.split(';')[0]!;
+    const request = (await start.json()).data.id;
+    await (await openInTelegram(f.auth,request,{id:1234,first_name:'Участник'}))(true);
+    assert.ok(await f.repo.read(s => s.sessions.boundary), 'pending browser consumption has not issued a session');
+    const result = await fetch(f.base + '/telegram/status/' + request,{headers:{cookie:browser}});
+    assert.equal((await result.json()).data.status,'approved');
+    const cookie = result.headers.getSetCookie().find(header => header.startsWith('klan_session='))!;
+    const fresh = hashToken(cookie.split(';')[0]!.split('=')[1]!);
+    assert.deepEqual(await f.repo.read(s => Object.keys(s.sessions).sort()),['legacyLive','recent',fresh].sort());
+  } finally { await f.close(); }
+});
 
 test('personal session management enforces an exact 24-hour delay on the acting login', async () => {
   const day = 24 * 60 * 60_000;

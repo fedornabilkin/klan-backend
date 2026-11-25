@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { parseGroupLevels, type GroupLevels } from './access.js';
+import { sessionIdleMs } from './sessions.js';
 
 export interface Config {
   port: number; demo: boolean; production: boolean; origin: string; databaseUrl?: string; demoDatabaseUrl?: string;
@@ -28,7 +29,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     telegramGroupMembershipRequired: requireMembership === 'true',
     adminTelegramIds: [...new Set((env.TELEGRAM_ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean))],
     membershipTtlMs: Number(env.TELEGRAM_MEMBERSHIP_TTL_SECONDS || 60) * 1000,
-    sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
+    sessionTtlMs: sessionIdleMs,
   };
   if (config.demoUserId && !/^[A-Za-z0-9_-]{1,160}$/.test(config.demoUserId)) throw new Error('DEMO_USER_ID must be an internal profile ID');
   if (!['member', 'admin'].includes(config.demoAccessLevel!)) throw new Error('DEMO_ACCESS_LEVEL must be member or admin');

@@ -15,6 +15,19 @@ export interface SessionRecord {
 }
 
 export const activityInterval = 5 * 60_000;
+export const sessionIdleMs = 7 * 24 * 60 * 60_000;
+
+export function sessionIsLive(session: SessionRecord, at: number) {
+  const activity = session.lastActiveAt ?? session.firstSeenAt ?? session.createdAt;
+  return Date.parse(session.expiresAt) > at && (activity === undefined || Date.parse(activity) > at - sessionIdleMs);
+}
+
+export function renewSession(session: SessionRecord, at: number, ttl: number) {
+  if (!sessionIsLive(session, at) || Date.parse(session.lastActiveAt ?? '') >= at) return;
+  session.lastActiveAt = new Date(at).toISOString();
+  if (!session.createdAt) session.firstSeenAt ??= session.lastActiveAt;
+  session.expiresAt = new Date(at + ttl).toISOString();
+}
 const cooldown = 24 * 60 * 60_000;
 const browsers: [RegExp, string][] = [
   [/Edg(?:e|A|iOS)?\//i,'Edge'], [/OP(?:R|iOS)\//i,'Opera'], [/SamsungBrowser\//i,'Samsung Internet'],
@@ -40,7 +53,7 @@ function publicSessionId(key: string) {
 
 function activeOwner(sessions: Record<string,SessionRecord>, key: string, userId: string, now: number) {
   const current = sessions[key];
-  if (!current || current.userId !== userId || !(Date.parse(current.expiresAt) > now)) {
+  if (!current || current.userId !== userId || !sessionIsLive(current, now)) {
     throw new HttpError(401, 'UNAUTHORIZED', 'Сессия завершена. Войдите снова.');
   }
   return current;
@@ -55,7 +68,7 @@ export function sessionList(sessions: Record<string,SessionRecord>, key: string,
   const current = activeOwner(sessions, key, userId, now);
   const unlock = unlockTime(current, now);
   const items = Object.entries(sessions)
-    .filter(([,s]) => s.userId === userId && Date.parse(s.expiresAt) > now)
+    .filter(([,s]) => s.userId === userId && sessionIsLive(s, now))
     .map(([id,s]) => ({ id:publicSessionId(id), current:id === key, browser:s.browser ?? null, os:s.os ?? null,
       ip:s.ip ?? null, createdAt:s.createdAt ?? null, lastActiveAt:s.lastActiveAt ?? null }))
     .sort((a,b) => Number(b.current) - Number(a.current) || (b.lastActiveAt ?? '').localeCompare(a.lastActiveAt ?? ''));
@@ -69,7 +82,7 @@ export function revokeSessions(sessions: Record<string,SessionRecord>, key: stri
   }
   const revoked: string[] = [];
   for (const [id,session] of Object.entries(sessions)) {
-    if (session.userId !== userId || !(Date.parse(session.expiresAt) > now)) continue;
+    if (session.userId !== userId || !sessionIsLive(session, now)) continue;
     if (target === 'others' ? id !== key : publicSessionId(id) === target) {
       delete sessions[id];
       revoked.push(id);

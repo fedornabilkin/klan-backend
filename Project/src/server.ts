@@ -104,7 +104,12 @@ async function shutdown() {
   clearTimeout(timer);
   for (const socket of sockets.clients) socket.close(1001, 'Server shutdown');
   sockets.close();
-  server.close(async () => { await repo.close(); process.exit(0); });
+  server.close(async () => {
+    try { await auth.flushSessionActivity(); }
+    catch { console.error('Could not persist the final session activity batch.'); process.exitCode = 1; }
+    await repo.close();
+    process.exit(process.exitCode ?? 0);
+  });
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

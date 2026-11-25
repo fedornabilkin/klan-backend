@@ -4,6 +4,7 @@ import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createSeed } from './seed.js';
 import { PostgresRepository } from './repository.js';
+import { sessionIdleMs } from './sessions.js';
 
 test('stored access settings survive restart and are read by both PostgreSQL session paths', {skip:!process.env.TEST_DATABASE_URL}, async () => {
   const url = new URL(process.env.TEST_DATABASE_URL!);
@@ -29,16 +30,24 @@ test('stored access settings survive restart and are read by both PostgreSQL ses
     await repo.write(state => { state.accessSettings.site!.adminIds = []; state.accessSettings.site!.revision = randomUUID(); });
     assert.deepEqual((await reopened.readSession('test',Date.now(),false))?.policy?.adminIds,[]);
     const at = Date.now();
-    await Promise.all([repo.touchSession('test',at), reopened.touchSession('test',at + 1)]);
+    await Promise.all([repo.touchSessions(new Map([['test',at]]),sessionIdleMs), reopened.touchSessions(new Map([['test',at + 1]]),sessionIdleMs)]);
     const session = (await reopened.userSessions(user!.id,at + 1)).test!;
     assert.ok(session.lastActiveAt);
-    assert.equal(session.firstSeenAt,session.lastActiveAt);
+    assert.ok(Date.parse(session.firstSeenAt!) <= Date.parse(session.lastActiveAt!));
+    assert.equal(Date.parse(session.expiresAt),at + 1 + sessionIdleMs);
     assert.equal(session.createdAt,undefined);
-    await repo.touchSession('test',at + 2000);
+    await repo.touchSessions(new Map([['test',at - 2000]]),sessionIdleMs);
     assert.equal((await reopened.readSession('test',at + 2000,false))?.lastActiveAt,session.lastActiveAt);
     assert.deepEqual(await reopened.userSessions('other-user',at),{});
+    await repo.write(state => { state.sessions.stale = {...session, expiresAt:new Date(at + 2*sessionIdleMs).toISOString(),
+      lastActiveAt:new Date(at - sessionIdleMs).toISOString()}; });
+    const live = await Promise.all([reopened.readSession('stale',at-1,false), reopened.readSession('stale',at,false)]);
+    assert.ok(live[0]); assert.equal(live[1],undefined);
+    assert.equal(await reopened.readSession('stale',at,true),undefined);
+    await reopened.touchSessions(new Map([['stale',at]]),sessionIdleMs);
+    assert.equal((await reopened.userSessions(user!.id,at)).stale,undefined);
     await repo.write(state => { delete state.sessions.test; });
-    await reopened.touchSession('test',at + 300000);
+    await reopened.touchSessions(new Map([['test',at + 300000]]),sessionIdleMs);
     assert.deepEqual(await reopened.userSessions(user!.id,at),{});
   } finally {
     await Promise.all([repo.close(),reopened.close()]);
