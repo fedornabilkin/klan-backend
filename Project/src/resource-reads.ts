@@ -3,6 +3,7 @@ import type { Activity, Entity, Resource, TeamChallengeSummary, User } from './s
 import { filtered, hydrateUser, paginate, type Query } from './domain.js';
 import { emptyState } from './repository.js';
 import { notFound } from './errors.js';
+import { missingMembersSql, type MissingMemberField } from './admin-member-filters.js';
 
 export function entityCard(entity: Entity) {
   const { id, publicId, type, title, description, status, category, tags, createdAt, location, schedule, goal } = entity;
@@ -196,13 +197,19 @@ async function hydrateDetails(db: PoolClient, documents: StoredDetail[], drafts:
     author: entity.author && fallback(entity.author), results: entity.results?.map(withUser), pendingResults: entity.pendingResults?.map(withUser) }));
 }
 
-export async function readList(db: PoolClient, resource: Resource, q: Query, drafts: boolean, cards: boolean) {
+export async function readList(db: PoolClient, resource: Resource, q: Query, drafts: boolean, cards: boolean, missing: MissingMemberField[] = []) {
   const users = resource === 'users';
   const table = users ? 'klan_users' : 'klan_entities';
   const args = users ? [] : [resource];
-  const where = users ? 'TRUE' : `kind=$1 AND ${drafts ? 'TRUE' : "card->>'status' IS DISTINCT FROM 'draft'"}`;
+  const where = users ? missingMembersSql(missing) : `kind=$1 AND ${drafts ? 'TRUE' : "card->>'status' IS DISTINCT FROM 'draft'"}`;
   let ids: string[], total: number;
-  if (!q.q.trim() && !q.city && !q.tag && !q.status && !q.category && q.sort.endsWith('createdAt')) {
+  const byDateOnly = !q.q.trim() && !q.city && !q.tag && !q.status && !q.category && q.sort.endsWith('createdAt');
+  if (byDateOnly && users && missing.length) {
+    const result = await db.query(`WITH matches AS MATERIALIZED (SELECT id, data->>'joinedAt' AS joined FROM klan_users WHERE ${where})
+      SELECT (SELECT count(*)::int FROM matches) AS total, ARRAY(SELECT id FROM matches ORDER BY joined ${q.sort.startsWith('-') ? 'DESC' : 'ASC'}, id
+        LIMIT $1 OFFSET $2) AS ids`, [q.limit, (q.page - 1) * q.limit]);
+    ({ ids, total } = result.rows[0]);
+  } else if (byDateOnly) {
     total = (await db.query(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`, args)).rows[0].n;
     const field = users ? 'joinedAt' : 'createdAt';
     ids = (await db.query(`SELECT id FROM ${table} WHERE ${where} ORDER BY (${users ? 'data' : 'card'}->>'${field}') ${q.sort.startsWith('-') ? 'DESC' : 'ASC'}, id

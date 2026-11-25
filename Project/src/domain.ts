@@ -79,8 +79,9 @@ export const querySchema = z.object({
 });
 export type Query = z.infer<typeof querySchema>;
 
-function communityFact(entry: User['facts'][number]) {
-  return !profileEntryText(entry).startsWith('PCM (из исходного файла):');
+export const importedFactPrefix = 'PCM (из исходного файла):';
+export function communityFact(entry: User['facts'][number]) {
+  return !profileEntryText(entry).startsWith(importedFactPrefix);
 }
 
 export function profileWithMemberships(user: User, activeTeams: NonNullable<User['activeTeams']>, stats: User['stats']): User {
@@ -167,7 +168,7 @@ export function requireAdmin(actor: User) { if (actor.role !== 'admin') throw fo
 export type SearchUser = Pick<User, 'id' | 'name' | 'username' | 'callsign' | 'bio' | 'location' | 'interests' | 'facts' | 'achievements' | 'tags' | 'joinedAt'>;
 function searchText(record: SearchUser | Entity) {
   return 'name' in record
-    ? [record.name, record.username, record.callsign, record.bio, record.location.city, record.location.country, ...record.interests, ...record.facts.filter(communityFact).map(profileEntryText), ...record.achievements.map(profileEntryText), ...record.tags.map(t => t.name)].join(' ')
+    ? [record.name, record.username, record.callsign, record.bio, record.location?.city, record.location?.country, ...(record.interests ?? []), ...(record.facts ?? []).filter(communityFact).map(profileEntryText), ...(record.achievements ?? []).map(profileEntryText), ...(record.tags ?? []).map(t => t.name)].join(' ')
     : [record.title, record.description, record.category, record.location?.city, ...record.tags.map(t => t.name)].join(' ');
 }
 export function filtered<T extends SearchUser | Entity>(rows: T[], query: Query): T[] {

@@ -76,6 +76,7 @@ test('Demo creates hashed session and logout revokes it', async () => {
     const token = cookie.split('=')[1]!;
     const state = await f.repo.read((value) => value);
     assert.ok(state.sessions[hashToken(token)]);
+    assert.equal(state.activities.filter(a => a.actor.id === admin.id && a.action === 'вошёл в сообщество').length, 1);
     assert.equal(state.sessions[token], undefined);
     await f.repo.write((value) => {
       value.entities.push({ id: 'joined-event', type: 'events', title: 'Поход', description: '', status: 'active',

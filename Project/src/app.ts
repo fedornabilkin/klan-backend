@@ -20,6 +20,7 @@ import { createBotIngress } from './bot-ingress.js';
 import { createBotChannel } from './bot-channel.js';
 import { createCatalogRouter, findOrCreateCatalogEntry } from './catalog.js';
 import { createAnalyticsRouter } from './analytics.js';
+import { membersMissing, missingMemberFields } from './admin-member-filters.js';
 import { createLocationCatalogRouter } from './location-catalog.js';
 import { createAndAssignProfileTag } from './profile-tags.js';
 import { hasCapability, requireCapability } from './access.js';
@@ -57,10 +58,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (activity) broadcast({ type: 'activity', data: activity });
   };
   const botChannel = createBotChannel();
-  const auth = createAuth(repo, config, async (actor, action) => {
-    const activity = await repo.write(state => publicActivity(state, addActivity(state, actor, action)));
-    notify('users', activity);
-  }, authDependencies ?? botChannel);
+  const auth = createAuth(repo, config, activity => notify('users', activity), authDependencies ?? botChannel);
   // A service endpoint, outside browser cookie authentication and Origin handling.
   app.use('/internal/telegram', createBotIngress(config.botInternalSecret, auth.handleTelegramUpdate, botChannel));
   app.use(['/api/auth/demo', '/api/auth/telegram/start'], rateLimit({ windowMs: 5 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много попыток входа. Попробуйте позже.' } } }));
@@ -76,11 +74,12 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     if (!resources.includes(value as Resource)) throw notFound();
     return value as Resource;
   };
-  const mutate = async <T>(actor: User, collection: string, action: string, fn: (state: DatabaseState, audit: RecordUsernameChange) => T, target?: (value: T) => Activity['target']) => {
+  const mutate = async <T>(actor: User, collection: string, action: string | ((state: DatabaseState) => string | undefined), fn: (state: DatabaseState, audit: RecordUsernameChange) => T, target?: (value: T) => Activity['target']) => {
     const outcome = await repo.write((state, audit) => {
+      const verb = typeof action === 'string' ? action : action(state);
       const data = fn(state, audit); const destination = target?.(data);
       const draft = !!destination && state.entities.some(entity => entity.status === 'draft' && destination.path === `/${entity.type}/${entity.id}`);
-      return { data, activity: publicActivity(state, addActivity(state, actor, action, destination)), draft };
+      return { data, activity: verb ? publicActivity(state, addActivity(state, actor, verb, destination)) : undefined, draft };
     });
     // Draft activities remain available to administrators via the feed; never broadcast their titles to members.
     notify(collection, outcome.draft ? undefined : outcome.activity);
@@ -223,8 +222,10 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     notify('users');
   });
   app.delete('/api/:resource/:id/join', async (req, res) => {
-    const collection = resource(req);
-    res.json(await mutate(req.user!, collection, 'отменил участие', state => leaveEntity(state, collection, String(req.params.id), req.user!), entityTarget));
+    const collection = resource(req), id = String(req.params.id), actor = req.user!;
+    const departure = (state: DatabaseState) => getEntity(state, collection, id).participants.some(p => p.user.id === actor.id)
+      ? 'отменил участие' : undefined;
+    res.json(await mutate(actor, collection, departure, state => leaveEntity(state, collection, id, actor), entityTarget));
     notify('users');
   });
   app.put('/api/events/:id/items', async (req, res) => {
@@ -270,6 +271,17 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
       return hydrateEntity(state, entity);
     }, entityTarget));
     notify('users');
+  });
+  app.get('/api/admin/users', async (req, res) => {
+    requireCapability(req.user!, 'members.manage');
+    res.setHeader('Cache-Control', 'private, no-store');
+    const missing = missingMemberFields.parse(req.query.missing);
+    const params = query(req);
+    if (repo.list) return res.json(await repo.list('users', params, true, true, missing));
+    res.json(await repo.read(state => {
+      const page = paginate(filtered(membersMissing(state, missing), params), params);
+      return { ...page, data: page.data.map(user => userCard(hydrateUser(state, user), true)) };
+    }));
   });
   app.get('/api/:resource', async (req, res) => {
     const collection = resource(req), params = query(req), cards = req.query.view === 'cards';

@@ -8,6 +8,7 @@ import { isDeploymentAdmin, reconcileDeploymentAdmins } from './deployment-admin
 import { cardProjection, readProjections } from './read-projections.js';
 import { activeTeamUserIds, entityCardSelect, readList, readDetail, readActivity } from './resource-reads.js';
 import type { Query } from './domain.js';
+import type { MissingMemberField } from './admin-member-filters.js';
 import type { Resource } from './shared/contracts.js';
 import { assignPublicIds } from './user-ids.js';
 import type { Activity, Entity, Item, Tag, User } from './shared/contracts.js';
@@ -42,7 +43,7 @@ export interface Repository {
   readSession?(key: string, at: number, withProfile: boolean): Promise<SessionPrincipal | undefined>;
   authRequest?(id: string): Promise<DatabaseState['authRequests'][string] | undefined>;
   readPage?<T>(page: CommunityPage, fn: (state: DatabaseState) => T, at: Date): Promise<T>;
-  list?(resource: Resource, query: Query, drafts: boolean, cards: boolean): Promise<unknown>;
+  list?(resource: Resource, query: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]): Promise<unknown>;
   exportProfile?(id: string): Promise<User>;
   detail?(resource: Resource, id: string, drafts: boolean, compact: boolean): Promise<unknown>;
   activity?(query: Pick<Query,'page'|'limit'>, drafts: boolean): Promise<unknown>;
@@ -173,8 +174,8 @@ export class PostgresRepository implements Repository {
         initials text, color text) ORDER BY u.id`);
     return result.rows;
   }
-  list(resource: Resource, q: Query, drafts: boolean, cards: boolean) {
-    return this.snapshot(db => readList(db, resource, q, drafts, cards));
+  list(resource: Resource, q: Query, drafts: boolean, cards: boolean, missing?: MissingMemberField[]) {
+    return this.snapshot(db => readList(db, resource, q, drafts, cards, missing));
   }
   async exportProfile(id: string) {
     const row = await this.pool.query(`SELECT data - ARRAY['communityImport','historicalImport','importProvenance','access','stats','activeTeams','role','joinedAt','initials','color','publicId']

@@ -1,11 +1,11 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { Router, type RequestHandler, type Response } from 'express';
-import type { User } from './shared/contracts.js';
+import type { Activity, User } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { DatabaseState, Repository } from './repository.js';
 import { HttpError } from './errors.js';
-import { hydrateUser } from './domain.js';
+import { addActivity, hydrateUser, publicActivity } from './domain.js';
 import { accessForLevel, resolveTelegramAccess } from './access.js';
 import type { AccessSummary } from './shared/access.js';
 import { bindDeploymentAdmin, isDeploymentAdmin } from './deployment-admins.js';
@@ -72,7 +72,7 @@ function failure(status: number, code: string, message: string): HttpError {
 export function createAuth(
   repo: Repository,
   config: Config,
-  onEvent?: (user: User, action: string) => Promise<void>,
+  onEvent?: (activity: Activity) => void,
   dependencies: AuthDependencies = {},
 ) {
   const now = dependencies.now ?? Date.now;
@@ -188,24 +188,25 @@ export function createAuth(
     next();
   };
 
-  async function recordEvent(user: User, action: string): Promise<void> {
-    try { await onEvent?.(user, action); }
-    catch { console.warn('Authentication activity could not be recorded.'); }
+  function publishActivity(activity: Activity) {
+    try { onEvent?.(activity); }
+    catch { console.warn('Authentication activity could not be broadcast.'); }
   }
 
   async function issueSession(res: Response, user: User, previousCookie?: string, source: 'demo' | 'telegram' = 'telegram'): Promise<void> {
     const token = randomBytes(32).toString('hex');
     const previous = readCookie(previousCookie, sessionCookie);
-    await repo.write((state) => {
+    const activity = await repo.write((state) => {
       const timestamp = now();
       for (const [key, session] of Object.entries(state.sessions)) {
         if (Date.parse(session.expiresAt) <= timestamp) delete state.sessions[key];
       }
       if (previous) delete state.sessions[hashToken(previous)];
       state.sessions[hashToken(token)] = { userId: user.id, expiresAt: new Date(timestamp + config.sessionTtlMs).toISOString(), source };
+      return publicActivity(state, addActivity(state, user, 'вошёл в сообщество'));
     });
     res.cookie(sessionCookie, token, { ...cookieOptions, maxAge: config.sessionTtlMs });
-    await recordEvent(user, 'вошёл в сообщество');
+    publishActivity(activity);
   }
 
   const currentBotUsername = () => config.botInternalSecret && (!requireMembership || config.telegramGroups.length > 0)
@@ -232,9 +233,12 @@ export function createAuth(
   router.post('/logout', requireAuth, async (req, res, next) => {
     try {
       const token = readCookie(req.headers.cookie, sessionCookie);
-      if (token) await repo.write((state) => { delete state.sessions[hashToken(token)]; });
+      const activity = await repo.write(state => {
+        if (token) delete state.sessions[hashToken(token)];
+        return publicActivity(state, addActivity(state, req.user!, 'вышел из сообщества'));
+      });
       res.clearCookie(sessionCookie, cookieOptions);
-      await recordEvent(req.user!, 'вышел из сообщества');
+      publishActivity(activity);
       res.json({ data: { success: true } });
     } catch (error) { next(error); }
   });

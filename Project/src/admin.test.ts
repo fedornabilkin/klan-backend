@@ -42,6 +42,16 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
   assert.equal((await request('/admin/catalogs/tags', 1)).status, 403);
   assert.equal((await request('/admin/analytics/community', 2)).status, 403);
   assert.equal((await request('/admin/analytics/community', 0)).status, 200);
+  assert.equal((await fetch(base + '/admin/users?missing=telegram')).status, 401);
+  for (const role of [1, 2]) assert.equal((await request('/admin/users?missing=telegram', role)).status, 403);
+  assert.equal((await request('/admin/users?missing=unknown', 0)).status, 400);
+  const unlinked = await (await request('/admin/users?missing=telegram&limit=2&page=2', 0)).json();
+  assert.equal(unlinked.meta.total, 21);
+  assert.equal(unlinked.data.length, 2);
+  assert.ok(unlinked.data.every((u: { id: string }) => !['user-1', 'user-2', 'user-3'].includes(u.id)));
+  const otherTeam = await repo.read(s => s.entities.find(e => e.type === 'teams' && e.status === 'active' && !e.participants.some(p => p.user.id === 'user-2'))!.id);
+  assert.equal((await request(`/teams/${otherTeam}/join`, 1, 'DELETE')).status, 200);
+  assert.equal(await repo.read(s => s.activities.some(a => a.actor.id === 'user-2' && a.action === 'отменил участие')), false);
   assert.equal((await request('/admin/analytics/community?from=2026-02-30', 0)).status, 400);
   assert.equal((await request('/admin/analytics/members/missing', 0)).status, 404);
   const members = await request('/admin/analytics/members?limit=5&page=2', 0);
