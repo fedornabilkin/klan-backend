@@ -3,6 +3,7 @@ import type { Activity, Entity, Resource, TeamChallengeSummary, User } from './s
 import { filtered, hydrateUser, paginate, type Query } from './domain.js';
 import { emptyState } from './repository.js';
 import { notFound } from './errors.js';
+import { activityView } from './activity-view.js';
 import { missingMembersSql, type MissingMemberField } from './admin-member-filters.js';
 
 export function entityCard(entity: Entity) {
@@ -268,7 +269,7 @@ export async function readActivity(db: PoolClient, q: Page, drafts: boolean) {
     Object.assign(activity.actor, row.identity);
     if (activity.target && row.target_identity) activity.target.user = row.target_identity;
     if (row.number && activity.target) activity.target.path = `/${row.kind}/${row.number}`;
-    return activity;
+    return activityView(activity);
   });
   return {data,meta:meta(q,total)};
 }

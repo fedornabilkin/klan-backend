@@ -27,6 +27,17 @@ test('activity avatars use current callsigns and membership even for old events'
   team.status = 'archived';
   assert.equal(publicActivity(state,event).actor.hasActiveTeam,false);
 });
+test('legacy feed records expose only display fields from saved profile snapshots', () => {
+  const state = createSeed();
+  const snapshot = { ...state.users[0]!, id:'old-profile', communityImport:{ source:'private' } };
+  const item = { ...state.activities[0]!, actor:snapshot, target:{path:'/users/old-profile', title:snapshot.name, user:snapshot} };
+  const result = publicActivity(state, item);
+  assert.equal(result.actor.id,snapshot.id);
+  assert.equal(result.target?.user?.name,snapshot.name);
+  for (const identity of [result.actor, result.target!.user!]) {
+    for (const field of ['communityImport','location','bio','username','access','facts']) assert.ok(!(field in identity));
+  }
+});
 test('profile cannot modify role or somebody else', () => {
   const state = createSeed();
   assert.throws(() => updateProfile(state, 'user-2', { bio: 'Hijacked' }, state.users[2]!), { code: 'FORBIDDEN' });

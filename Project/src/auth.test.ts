@@ -430,6 +430,25 @@ test('Session expiry and fabricated cookies cannot authenticate', async () => {
   } finally { await f.close(); }
 });
 
+test('poll and cancel only write when the requesting browser has a matching login to change', async t => {
+  const f = await fixture({ botInternalSecret: serviceSecret });
+  t.after(f.close);
+  const start = await fetch(f.base + '/telegram/start', { method: 'POST' });
+  const cookie = start.headers.getSetCookie()[0]!.split(';')[0]!;
+  const { id } = (await start.json()).data;
+  const revision = f.repo.revision;
+  const poll = () => fetch(f.base + '/telegram/status/' + id, {headers:{cookie}}).then(r => r.json());
+  const cancel = (id: string, cookie: string) => fetch(f.base + '/telegram/cancel/' + id, {method:'POST',headers:{cookie}});
+  assert.equal((await poll()).data.status, 'pending');
+  assert.equal((await cancel(id, 'klan_auth=' + 'f'.repeat(64))).status, 204);
+  assert.equal((await cancel('b'.repeat(48), cookie)).status, 204);
+  assert.equal((await poll()).data.status, 'pending');
+  assert.equal(f.repo.revision, revision);
+  assert.equal((await cancel(id, cookie)).status, 204);
+  assert.equal((await poll()).data.status, 'expired');
+  assert.equal(f.repo.revision, revision + 1);
+});
+
 test('Telegram approval belongs to its initiating browser and can be consumed once', async () => {
   const f = await fixture({ botInternalSecret: serviceSecret, telegramGroups: ['-100123'] }, memberTelegram);
   try {

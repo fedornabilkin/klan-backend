@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { Router, type Request, type RequestHandler, type Response } from 'express';
+import { json, Router, type Request, type RequestHandler, type Response } from 'express';
 import type { Activity, User } from './shared/contracts.js';
 import type { Config } from './config.js';
 import type { DatabaseState, Repository, SessionPrincipal } from './repository.js';
@@ -274,7 +274,8 @@ export function createAuth(
     res.sendStatus(204);
   });
 
-  router.post('/demo', async (req, res, next) => {
+  const loginBody = json({ limit: '4kb', inflate: false });
+  router.post('/demo', loginBody, async (req, res, next) => {
     try {
       if (!config.demo || config.production) throw failure(404, 'NOT_FOUND', 'Демонстрационный вход отключён.');
       if (!config.demoUserId) throw failure(503, 'DEMO_USER_NOT_CONFIGURED', 'Для демонстрационного входа нужно задать DEMO_USER_ID.');
@@ -301,7 +302,7 @@ export function createAuth(
     } catch (error) { next(error); }
   });
 
-  router.post('/telegram/start', async (_req, res, next) => {
+  router.post('/telegram/start', loginBody, async (_req, res, next) => {
     try {
       if (!config.botInternalSecret) {
         throw failure(503, 'TELEGRAM_NOT_CONFIGURED', 'Для входа администратор должен настроить авторизацию через Telegram.');
@@ -327,11 +328,12 @@ export function createAuth(
     } catch (error) { next(error); }
   });
 
+  const lookupRequest = (id: string) => repo.authRequest ? repo.authRequest(id) : repo.read(state => state.authRequests[id]);
   router.get('/telegram/status/:id', async (req, res, next) => {
     try {
       const id = String(req.params.id);
       const browserToken = readCookie(req.headers.cookie, browserCookie);
-      if (!/^[a-f0-9]{48}$/.test(id) || !browserToken) {
+      if (!/^[a-f0-9]{48}$/.test(id) || !browserToken || !/^[a-f0-9]{64}$/.test(browserToken)) {
         throw failure(400, 'INVALID_LOGIN', 'Откройте вход в этом браузере заново.');
       }
       const browserHash = hashToken(browserToken);
@@ -344,12 +346,10 @@ export function createAuth(
         if (request.status !== 'approved' || !request.userId) return 'pending' as const;
         return 'approved' as const;
       }
-      if (repo.authRequest) {
-        const current = status(await repo.authRequest(id));
-        if (current !== 'approved') {
-          res.json({ data: { status: current } });
-          return;
-        }
+      const current = status(await lookupRequest(id));
+      if (current !== 'approved') {
+        res.json({ data: { status: current } });
+        return;
       }
       const approvedUser = await repo.write((state) => {
         const request = state.authRequests[id];
@@ -384,17 +384,21 @@ export function createAuth(
     } catch (error) { next(error); }
   });
 
-  router.post('/telegram/cancel/:id', async (req, res, next) => {
+  router.post('/telegram/cancel/:id', loginBody, async (req, res, next) => {
     try {
       const id = String(req.params.id);
       const browserToken = readCookie(req.headers.cookie, browserCookie);
-      if (!/^[a-f0-9]{48}$/.test(id) || !browserToken) {
+      if (!/^[a-f0-9]{48}$/.test(id) || !browserToken || !/^[a-f0-9]{64}$/.test(browserToken)) {
         throw failure(400, 'INVALID_LOGIN', 'Откройте вход в этом браузере заново.');
       }
-      await repo.write(state => {
-        const request = state.authRequests[id];
-        if (request && equalHash(request.browserHash, hashToken(browserToken))) delete state.authRequests[id];
-      });
+      const browserHash = hashToken(browserToken);
+      const existing = await lookupRequest(id);
+      if (existing && equalHash(existing.browserHash, browserHash)) {
+        await repo.write(state => {
+          const request = state.authRequests[id];
+          if (request && equalHash(request.browserHash, browserHash)) delete state.authRequests[id];
+        });
+      }
       res.sendStatus(204);
     } catch (error) { next(error); }
   });

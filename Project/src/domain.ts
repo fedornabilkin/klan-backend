@@ -8,6 +8,7 @@ import { formatProfileName, latestProfileDate, normalizeTelegramUsername } from 
 import type { DatabaseState, RecordUsernameChange } from './repository.js';
 import { forbidden, HttpError, notFound } from './errors.js';
 import { hasCapability, requireCapability } from './access.js';
+import { publicIdentity, activityView } from './activity-view.js';
 
 export const resources = ['users', 'events', 'teams', 'challenges', 'news', 'feedback', 'books', 'rules'] as const;
 const shortText = z.string().trim().min(1).max(120);
@@ -150,11 +151,11 @@ export function activeTeamMembers(entities: Entity[]): Set<string> {
 }
 
 function activityIdentity(state: DatabaseState, user: Activity['actor'] | User) {
-  const { id, publicId, firstName, lastName, name, initials, color, callsign } = user;
-  const hasActiveTeam = state.entities.some(e => e.type === 'teams' && e.status === 'active' && e.participants.some(p => p.user.id === id));
-  return { id, publicId, firstName, lastName, name, initials, color, callsign, hasActiveTeam };
+  const hasActiveTeam = state.entities.some(e => e.type === 'teams' && e.status === 'active' && e.participants.some(p => p.user.id === user.id));
+  return publicIdentity(user, hasActiveTeam);
 }
-export function publicActivity(state: DatabaseState, activity: Activity): Activity {
+export function publicActivity(state: DatabaseState, snapshot: Activity): Activity {
+  const activity = activityView(snapshot);
   const user = state.users.find(u => u.id === activity.actor.id);
   const actor = { ...activity.actor, ...activityIdentity(state, user ?? activity.actor) };
   if (!activity.target) return {...activity,actor};
@@ -293,6 +294,7 @@ export function createEntity(state: DatabaseState, resource: Entity['type'], inp
 }
 export function editEntity(state: DatabaseState, resource: Entity['type'], id: string, input: unknown, actor: User): Entity {
   const original = getEntity(state, resource, id);
+  if (original.status === 'draft' && !hasCapability(actor, 'content.manage')) throw notFound();
   if (!(resource === 'feedback' && original.author?.id === actor.id)) requireCapability(actor, 'content.manage');
   const values = (resource === 'books' ? bookPatchSchema : entityPatchSchema).parse(input);
   if (resource === 'feedback' && values.status !== undefined) requireAdmin(actor);
@@ -307,6 +309,7 @@ export function joinEntity(state: DatabaseState, resource: string, id: string, a
   const { teamId } = z.object({ teamId: z.string().min(1).max(80).optional() }).strict().parse(input ?? {});
   const entity = getEntity(state, resource, id);
   if (!['events', 'teams', 'challenges'].includes(resource)) throw notFound();
+  if (entity.status === 'draft' && !hasCapability(actor, 'content.manage')) throw notFound();
   if (['archived', 'closed', 'completed', 'draft'].includes(entity.status)) throw new HttpError(409, 'REGISTRATION_CLOSED', 'Запись закрыта');
   if (entity.schedule && Date.parse(entity.schedule.end) < Date.now()) throw new HttpError(409, 'REGISTRATION_CLOSED', 'Событие уже завершилось');
   if (entity.participants.some(p => p.user.id === actor.id)) return hydrateEntity(state, entity);
@@ -337,6 +340,7 @@ export function leaveEntity(state: DatabaseState, resource: string, id: string, 
 export function writeChallengeDay(state: DatabaseState, id: string, actor: User, input: unknown, now = new Date()) {
   const values = z.object({ date: z.iso.date(), value: z.number().nonnegative().max(1e7) }).strict().parse(input);
   const entity = getEntity(state, 'challenges', id);
+  if (entity.status === 'draft' && !hasCapability(actor, 'content.manage')) throw notFound();
   const participation = entity.participants.find(p => p.user.id === actor.id);
   if (!participation) throw new HttpError(403, 'JOIN_REQUIRED', 'Сначала присоединитесь к челленджу');
   if (!entity.schedule || Date.parse(entity.schedule.end) <= now.getTime() || ['completed', 'archived', 'closed', 'draft'].includes(entity.status)) throw new HttpError(409, 'CHALLENGE_FINISHED', 'Челлендж завершён, редактирование закрыто');

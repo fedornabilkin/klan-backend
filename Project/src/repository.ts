@@ -95,6 +95,10 @@ export class MemoryRepository implements Repository {
     }
   }
   async read<T>(fn: (state: DatabaseState) => T | Promise<T>): Promise<T> { await this.queue; return fn(structuredClone(this.state)); }
+  async authRequest(id: string) {
+    await this.queue;
+    return structuredClone(this.state.authRequests[id]);
+  }
   async likeSummaries(ids: string[], viewer: string) {
     await this.queue;
     const totals = new Map<string, LikeSummary>();

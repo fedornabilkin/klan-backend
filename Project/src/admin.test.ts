@@ -131,6 +131,14 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
   const draft = (await draftResponse.json()).data;
   assert.equal((await request(`/news/${draft.id}`, 2)).status, 200);
   assert.equal((await request(`/news/${draft.id}`, 1)).status, 404);
+  assert.equal((await request(`/news/${draft.id}`, 1, 'PATCH', {title:'Правка'})).status, 404);
+  const challengeDraft = await request('/challenges', 2, 'POST', {title:'Черновик',description:'Расписание',status:'draft',
+    schedule:{start:today+'T00:00:00Z',end:today+'T23:59:59Z'},goal:{target:10,unit:'раз'}});
+  assert.equal(challengeDraft.status,201);
+  const challengePath = '/challenges/' + (await challengeDraft.json()).data.publicId;
+  assert.equal((await request(challengePath + '/join', 1, 'POST', {})).status,404);
+  assert.equal((await request(challengePath + '/results', 1, 'PUT', {date:today,value:1})).status,404);
+  assert.equal((await request(challengePath + '/join', 2, 'POST', {})).status,409);
   assert.equal((await request(`/news/${draft.id}`, 2, 'DELETE')).status, 200);
   const path = '/admin/access';
   assert.equal((await fetch(base + path)).status, 401);
@@ -156,10 +164,14 @@ test('catalog and analytics HTTP routes enforce group capabilities and preserve 
 
 test('health reports database unavailability instead of a false healthy state', async t => {
   const memory = new MemoryRepository();
-  const repo: Repository = { read: memory.read.bind(memory), write: memory.write.bind(memory), likeSummaries: memory.likeSummaries.bind(memory), close: memory.close.bind(memory), ping: async () => { throw new Error('database offline'); } };
+  let probes = 0;
+  const repo: Repository = { read: memory.read.bind(memory), write: memory.write.bind(memory), likeSummaries: memory.likeSummaries.bind(memory), close: memory.close.bind(memory), ping: async () => { probes++; throw new Error('database offline'); } };
   const { app } = createApp(repo, config);
   const server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/health`);
-  assert.equal(response.status, 503); assert.equal((await response.json()).data.status, 'unavailable');
+  const health = () => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/health`);
+  for (const response of await Promise.all([health(), health()])) {
+    assert.equal(response.status, 503); assert.equal((await response.json()).data.status, 'unavailable');
+  }
+  assert.equal(probes, 1);
 });

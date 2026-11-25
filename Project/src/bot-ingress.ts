@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { Router } from 'express';
+import { json, Router } from 'express';
 import { z } from 'zod';
 import type { TelegramUpdate } from './auth.js';
 import { HttpError } from './errors.js';
@@ -55,6 +55,7 @@ export function createBotIngress(secret: string | undefined, handle: (update: Te
     if (!req.is('application/json')) throw new HttpError(415, 'JSON_REQUIRED', 'Ожидается JSON.');
     next();
   });
+  router.use(json({ limit: '256kb' }));
   router.post('/updates', async (req, res) => {
     const update = updateSchema.parse(req.body);
     const botId = req.get('x-klan-telegram-bot-id');

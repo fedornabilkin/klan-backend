@@ -39,20 +39,30 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
     directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'https:'], connectSrc: ["'self'", 'wss:'], fontSrc: ["'self'", 'data:'], objectSrc: ["'none'"], frameAncestors: ["'none'"] },
   } : false, crossOriginEmbedderPolicy: false }));
   app.use(compression({ level: 1, brotli: { params: { [zlib.BROTLI_PARAM_QUALITY]: 2 } } }));
-  app.use(express.json({ limit: '256kb' }));
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use('/api', (req, _res, next) => {
-    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const origin = req.headers.origin;
+    if (req.path !== '/health') {
+      const site = req.headers['sec-fetch-site'];
+      if (site === 'cross-site' || (site === 'same-site' && origin !== config.origin)) return next(forbidden());
+      if (origin && origin !== config.origin) return next(new HttpError(403, 'INVALID_ORIGIN', 'Запрос отправлен с недоверенного сайта'));
+    }
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     // Browser writes require a matching Origin. JSON-only prevents form-based CSRF.
     if (origin !== config.origin) return next(new HttpError(403, 'INVALID_ORIGIN', 'Запрос отправлен с недоверенного сайта'));
-    if (req.headers['sec-fetch-site'] === 'cross-site') return next(forbidden());
     if (!req.is('application/json') && req.method !== 'DELETE') return next(new HttpError(415, 'JSON_REQUIRED', 'Ожидается JSON'));
     next();
   });
+  let healthCheck: Promise<boolean> | undefined;
+  let healthValidUntil = 0;
   app.get('/api/health', async (_req, res) => {
-    try { await repo.ping?.(); res.json({ data: { status: 'ok', demo: config.demo } }); }
-    catch { res.status(503).json({ data: { status: 'unavailable', demo: config.demo } }); }
+    if (!healthCheck || Date.now() >= healthValidUntil) {
+      healthValidUntil = Infinity;
+      healthCheck = Promise.resolve().then(() => repo.ping?.()).then(() => true, () => false)
+        .finally(() => { healthValidUntil = Date.now() + 1000; });
+    }
+    const ready = await healthCheck;
+    res.status(ready ? 200 : 503).json({ data: { status: ready ? 'ok' : 'unavailable', demo: config.demo } });
   });
   const notify = (resource: string, activity?: Activity) => {
     broadcast({ type: 'invalidate', resource });
@@ -68,6 +78,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   app.use('/api/auth', rateLimit({ windowMs: 5 * 60 * 1000, limit: 400, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте позже.' } } }), auth.router);
   app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMIT', message: 'Слишком много запросов. Попробуйте через минуту.' } } }));
   app.use('/api', auth.requireAuth);
+  app.use('/api', express.json({ limit: '256kb' }));
   app.use('/api/admin/access', auth.requireAdmin, accessSettingsRouter(repo, config, authDependencies ?? botChannel, () => broadcast({type:'invalidate', resource:'access-settings'})));
   app.use('/api/location-catalog', createLocationCatalogRouter(repo, activity => notify('location-catalog', activity)));
   app.use('/api/admin/catalogs', createCatalogRouter(repo, notify));
@@ -410,7 +421,7 @@ export function createApp(repo: Repository, config: Config, broadcast: Broadcast
   const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof z.ZodError) { res.status(400).json({ error: { code: 'VALIDATION', message: error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') } }); return; }
     const trusted = error instanceof HttpError;
-    const status = trusted ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : 500;
+    const status = trusted ? error.status : error.type === 'entity.parse.failed' ? 400 : error.type === 'entity.too.large' ? 413 : ['encoding.unsupported', 'charset.unsupported'].includes(error.type) ? 415 : 500;
     if (status >= 500) console.error('API operation failed:', trusted ? error.code : error.name ?? 'Error');
     res.status(status).json({ error: { code: trusted ? error.code : status === 500 ? 'INTERNAL_ERROR' : 'INVALID_BODY', message: trusted ? error.message : status === 500 ? 'Не удалось выполнить запрос. Попробуйте ещё раз.' : 'Некорректный JSON или превышен размер запроса' } });
   };

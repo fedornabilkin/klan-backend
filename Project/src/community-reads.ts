@@ -3,6 +3,8 @@ import type { ChallengePodium, Entity, Statistics, User, UserIdentity } from './
 import type { SearchUser } from './domain.js';
 import { activeTeamUserIds } from './resource-reads.js';
 import { profileEntryText } from './shared/profile-entries.js';
+import { publicIdentity } from './activity-view.js';
+export { publicIdentity } from './activity-view.js';
 
 export type MapUser = SearchUser & Pick<User, 'publicId' | 'initials' | 'color' | 'firstName' | 'lastName' | 'hasActiveTeam'>;
 type StatisticsUser = Pick<User, 'tags' | 'achievements'> & { city: string };
@@ -41,11 +43,6 @@ export function dashboardCards(entities: Entity[], now: Date) {
     events: events.filter(e => Date.parse(e.schedule!.end) >= now.getTime()).slice(0, 4),
     challenges: challenges.slice(0, 3), teams: teams.slice(0, 4),
   };
-}
-
-export function publicIdentity(user: UserIdentity, hasActiveTeam: boolean): UserIdentity {
-  const { id, publicId, name, firstName, lastName, initials, color, callsign } = user;
-  return { id, publicId, name, firstName, lastName, initials, color, callsign, hasActiveTeam };
 }
 
 type ChallengeInfo = Pick<Entity, 'id' | 'publicId' | 'title' | 'goal' | 'status' | 'schedule' | 'createdAt'>;
