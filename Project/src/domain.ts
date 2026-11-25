@@ -72,6 +72,8 @@ export const entitySchema = z.object({
 }).strict();
 // PATCH must not apply creation defaults to omitted fields.
 const entityPatchSchema = entitySchema.partial().extend({ status: statusSchema.optional(), category: categorySchema.optional(), tags: tagsSchema.optional() });
+const bookCreateSchema = entitySchema.extend({ status: statusSchema.default('published') });
+const memberBookSchema = bookCreateSchema.pick({ title: true, description: true, category: true, content: true, tags: true, status: true });
 export const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(100000).default(1), limit: z.coerce.number().int().min(1).max(100).default(12),
   q: z.string().max(200).default(''), sort: z.enum(['name', '-name', 'createdAt', '-createdAt']).default('-createdAt'),
@@ -271,8 +273,10 @@ function validateEntity(state: DatabaseState, entity: Entity, original?: Entity)
   if (entity.type === 'challenges' && entity.category === 'attendance' && entity.results?.some(result => ![0, 1].includes(result.value))) throw new HttpError(409, 'INVALID_ATTENDANCE_RESULTS', 'Существующие результаты несовместимы с отметкой посещения');
 }
 export function createEntity(state: DatabaseState, resource: Entity['type'], input: unknown, actor: User): Entity {
-  if (resource !== 'feedback') requireCapability(actor, 'content.manage');
-  const values = entitySchema.parse(input);
+  if (resource !== 'feedback' && resource !== 'books') requireCapability(actor, 'content.manage');
+  const bookSchema = hasCapability(actor, 'content.manage') ? bookCreateSchema : memberBookSchema;
+  const values: z.infer<typeof entitySchema> = (resource === 'books' ? bookSchema : entitySchema).parse(input);
+  if (resource === 'books' && values.status !== 'published') requireCapability(actor, 'content.manage');
   if (resource === 'feedback' && (actor.role !== 'admin' || values.status === 'active')) values.status = 'open';
   const entity: Entity = { ...values, id: randomUUID(), type: resource, createdAt: new Date().toISOString(), participants: [], author: actor, tags: canonicalTags(state, values.tags) };
   if (resource === 'books') entity.readers = [];
